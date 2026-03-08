@@ -117,7 +117,7 @@ async function summariesForSiteIds(ids) {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "petroleum-api", dbConfigured: hasDbConfig() });
+  res.json({ ok: true, service: "petroleum-api", dbConfigured: hasDbConfig(), apiVersion: "2026-03-07-tank-info" });
 });
 
 app.post(
@@ -1074,6 +1074,7 @@ start().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
 
 
 
