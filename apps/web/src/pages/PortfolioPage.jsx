@@ -1,27 +1,24 @@
-import { Component, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { SiteMap } from "../components/SiteMap";
 
-class MapErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error) {
-    console.error("Portfolio map failed to render", error);
-  }
-
-  render() {
-    const { hasError } = this.state;
-    const { fallback, children } = this.props;
-    return hasError ? fallback : children;
-  }
+function SiteSummaryCard({ site, onSelect, selected }) {
+  return (
+    <button
+      className={`queue-item${selected ? " selected-site-summary" : ""}`}
+      onClick={() => onSelect(site)}
+    >
+      <div>
+        <strong>{site.name}</strong>
+        <div className="queue-sub">Code {site.siteCode} | {site.region || "n/a"}</div>
+        <div className="queue-sub">{[site.address, site.postalCode].filter(Boolean).join(" ") || "Address unavailable"}</div>
+      </div>
+      <div className="queue-badges">
+        <span className="badge badge-critical">{site.criticalCount || 0}</span>
+        <span className="badge badge-warn">{site.warnCount || 0}</span>
+      </div>
+    </button>
+  );
 }
 
 export function PortfolioPage() {
@@ -70,57 +67,44 @@ export function PortfolioPage() {
       <div className="split-layout">
         <section className="card map-panel">
           <div className="section-header">
-            <h3>Portfolio Map</h3>
-            <span>Map-first overview</span>
+            <h3>Portfolio Overview</h3>
+            <span>Stable summary view</span>
           </div>
-          <MapErrorBoundary
-            fallback={
-              <div className="card portfolio-map-fallback">
-                <strong>Map unavailable</strong>
-                <div>The site list is still available below while the map is unavailable.</div>
-              </div>
-            }
-          >
-            <SiteMap sites={sites} selectedSiteId={selectedSite?.id} onSelect={setSelectedSite} />
-          </MapErrorBoundary>
-          {selectedSite && (
-            <div className="drawer">
+          <div className="portfolio-overview-grid">
+            {sites.map((site) => (
+              <SiteSummaryCard
+                key={site.id}
+                site={site}
+                onSelect={setSelectedSite}
+                selected={selectedSite?.id === site.id}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="card queue-panel">
+          <div className="section-header">
+            <h3>Selected Site</h3>
+            <span>Current focus</span>
+          </div>
+          {selectedSite ? (
+            <div className="portfolio-selected-site">
               <div className="drawer-title">{selectedSite.name}</div>
               <div>Site Code: {selectedSite.siteCode}</div>
-              <div>
-                Address: {selectedSite.address || "n/a"} {selectedSite.postalCode || ""}
-              </div>
-              <div>
-                Pump Sides: {selectedSite.pumpSidesConnected}/{selectedSite.pumpSidesExpected}
-              </div>
+              <div>Region: {selectedSite.region || "n/a"}</div>
+              <div>Address: {[selectedSite.address, selectedSite.postalCode].filter(Boolean).join(" ") || "n/a"}</div>
+              <div>Pump Sides: {selectedSite.pumpSidesConnected}/{selectedSite.pumpSidesExpected}</div>
+              <div>Critical Alerts: {selectedSite.criticalCount || 0}</div>
+              <div>Warning Alerts: {selectedSite.warnCount || 0}</div>
               <div className="inline">
                 <Link to={`/sites/${selectedSite.id}`}>Open Site Detail</Link>
                 <Link to={`/sites/${selectedSite.id}/layout`}>Open Layout</Link>
                 <Link to={`/work-queue?siteId=${encodeURIComponent(selectedSite.id)}`}>Alerts</Link>
               </div>
             </div>
+          ) : (
+            <div className="card portfolio-map-fallback">No site selected.</div>
           )}
-        </section>
-
-        <section className="card queue-panel">
-          <div className="section-header">
-            <h3>Needs Attention</h3>
-            <span>By severity and connectivity</span>
-          </div>
-          <div className="stack">
-            {sites.map((site) => (
-              <button key={site.id} className="queue-item" onClick={() => setSelectedSite(site)}>
-                <div>
-                  <strong>{site.name}</strong>
-                  <div className="queue-sub">Code {site.siteCode} | {site.region}</div>
-                </div>
-                <div className="queue-badges">
-                  <span className="badge badge-critical">{site.criticalCount}</span>
-                  <span className="badge badge-warn">{site.warnCount}</span>
-                </div>
-              </button>
-            ))}
-          </div>
         </section>
       </div>
 

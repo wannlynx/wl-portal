@@ -1365,3 +1365,33 @@ select {
 }
 
 
+
+.portfolio-overview-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.portfolio-selected-site {
+  display: grid;
+  gap: 8px;
+}
+
+.selected-site-summary {
+  border-color: #6c8ca0;
+  background: #f0f7fb;
+}
+
+.portfolio-map-fallback,
+.table-link-button {
+  color: inherit;
+}
+
+.table-link-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+}
