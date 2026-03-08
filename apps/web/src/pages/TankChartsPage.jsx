@@ -64,7 +64,7 @@ function TankChart({ tank }) {
           <div>
             <div className="tank-chart-kicker">Tank {tank.atgTankId}</div>
             <h3>{tank.label}</h3>
-            <p>{tank.product} • {formatVolume(tank.capacity)} capacity</p>
+            <p>{tank.product} â€¢ {formatVolume(tank.capacity)} capacity</p>
           </div>
         </div>
         <div className="admin-empty-state">No history rows for this tank in the selected timeframe.</div>
@@ -90,7 +90,7 @@ function TankChart({ tank }) {
         <div>
           <div className="tank-chart-kicker">Tank {tank.atgTankId}</div>
           <h3>{tank.label}</h3>
-          <p>{tank.product} • {formatVolume(tank.capacity)} capacity</p>
+          <p>{tank.product} â€¢ {formatVolume(tank.capacity)} capacity</p>
         </div>
         <div className="tank-chart-metrics">
           <div>
