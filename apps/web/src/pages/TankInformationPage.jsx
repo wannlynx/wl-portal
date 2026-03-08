@@ -77,7 +77,7 @@ function buildReportHtml({ title, generatedAt, scopeLabel, reportRows }) {
           <div class="store-head">
             <div>
               <h2>${escapeHtml(siteName)}</h2>
-              <div class="store-meta">Store ${escapeHtml(siteCode)} • ${escapeHtml(items[0]?.facilityName || siteName)}</div>
+              <div class="store-meta">Store ${escapeHtml(siteCode)} â€¢ ${escapeHtml(items[0]?.facilityName || siteName)}</div>
             </div>
             <div class="store-badge">${items.length} Tanks</div>
           </div>
