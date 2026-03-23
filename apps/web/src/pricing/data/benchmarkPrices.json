@@ -1,0 +1,108 @@
+{
+  "lastUpdated": "2026-03-23T10:20:00-04:00",
+  "sourceBadges": ["EIA", "CME", "ICE", "NRCan"],
+  "benchmarks": [
+    {
+      "key": "wti",
+      "label": "WTI Crude",
+      "unit": "USD/bbl",
+      "current": 68.42,
+      "dayAgo": 67.78,
+      "weekAgo": 65.91,
+      "sparkline": [64.8, 65.2, 65.9, 66.1, 66.8, 67.7, 68.42],
+      "historyAnchors": [
+        { "date": "2025-03-23", "value": 74.2 },
+        { "date": "2025-05-01", "value": 71.6 },
+        { "date": "2025-06-15", "value": 69.1 },
+        { "date": "2025-08-01", "value": 67.4 },
+        { "date": "2025-09-20", "value": 70.3 },
+        { "date": "2025-11-01", "value": 72.5 },
+        { "date": "2025-12-15", "value": 69.8 },
+        { "date": "2026-01-20", "value": 66.7 },
+        { "date": "2026-02-20", "value": 65.3 },
+        { "date": "2026-03-23", "value": 68.42 }
+      ]
+    },
+    {
+      "key": "brent",
+      "label": "Brent Crude",
+      "unit": "USD/bbl",
+      "current": 72.18,
+      "dayAgo": 71.59,
+      "weekAgo": 69.84,
+      "sparkline": [68.7, 69.2, 69.8, 70.1, 70.9, 71.6, 72.18],
+      "historyAnchors": [
+        { "date": "2025-03-23", "value": 78.1 },
+        { "date": "2025-05-01", "value": 75.4 },
+        { "date": "2025-06-15", "value": 73.3 },
+        { "date": "2025-08-01", "value": 71.6 },
+        { "date": "2025-09-20", "value": 74.1 },
+        { "date": "2025-11-01", "value": 76.4 },
+        { "date": "2025-12-15", "value": 73.7 },
+        { "date": "2026-01-20", "value": 70.8 },
+        { "date": "2026-02-20", "value": 69.3 },
+        { "date": "2026-03-23", "value": 72.18 }
+      ]
+    },
+    {
+      "key": "gasoline",
+      "label": "RBOB Gasoline",
+      "unit": "USD/gal",
+      "current": 2.19,
+      "dayAgo": 2.14,
+      "weekAgo": 2.07,
+      "sparkline": [2.03, 2.05, 2.07, 2.1, 2.12, 2.14, 2.19],
+      "historyAnchors": [
+        { "date": "2025-03-23", "value": 2.36 },
+        { "date": "2025-05-01", "value": 2.28 },
+        { "date": "2025-06-15", "value": 2.21 },
+        { "date": "2025-08-01", "value": 2.16 },
+        { "date": "2025-09-20", "value": 2.18 },
+        { "date": "2025-11-01", "value": 2.25 },
+        { "date": "2025-12-15", "value": 2.11 },
+        { "date": "2026-01-20", "value": 2.02 },
+        { "date": "2026-02-20", "value": 2.01 },
+        { "date": "2026-03-23", "value": 2.19 }
+      ]
+    },
+    {
+      "key": "diesel",
+      "label": "ULSD / Diesel",
+      "unit": "USD/gal",
+      "current": 2.36,
+      "dayAgo": 2.34,
+      "weekAgo": 2.29,
+      "sparkline": [2.27, 2.28, 2.29, 2.31, 2.32, 2.34, 2.36],
+      "historyAnchors": [
+        { "date": "2025-03-23", "value": 2.57 },
+        { "date": "2025-05-01", "value": 2.49 },
+        { "date": "2025-06-15", "value": 2.42 },
+        { "date": "2025-08-01", "value": 2.39 },
+        { "date": "2025-09-20", "value": 2.44 },
+        { "date": "2025-11-01", "value": 2.51 },
+        { "date": "2025-12-15", "value": 2.4 },
+        { "date": "2026-01-20", "value": 2.28 },
+        { "date": "2026-02-20", "value": 2.24 },
+        { "date": "2026-03-23", "value": 2.36 }
+      ]
+    },
+    {
+      "key": "crude",
+      "label": "U.S. Crude Stocks",
+      "unit": "MMbbl",
+      "current": 434.7,
+      "dayAgo": 436.1,
+      "weekAgo": 439.6,
+      "sparkline": [447.8, 444.6, 441.3, 439.6, 438.4, 436.1, 434.7]
+    },
+    {
+      "key": "gasolineStocks",
+      "label": "U.S. Gasoline Stocks",
+      "unit": "MMbbl",
+      "current": 242.1,
+      "dayAgo": 243.4,
+      "weekAgo": 246.2,
+      "sparkline": [249.8, 248.4, 247.5, 246.2, 244.9, 243.4, 242.1]
+    }
+  ]
+}

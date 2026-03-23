@@ -1,0 +1,13 @@
+{
+  "lastUpdated": "2026-03-23T10:20:00-04:00",
+  "macroTone": "Macro sentiment is steadier than it was at the start of the quarter, but physical balances are still driving most of the move.",
+  "refineryUtilization": 0.89,
+  "exportSignal": "Atlantic Basin export demand is keeping prompt barrels relatively tight.",
+  "weatherSignal": "Late-season cold and spring maintenance are limiting the near-term cushion in products.",
+  "sourceCoverage": [
+    { "source": "EIA", "description": "Daily spot prices, weekly inventories, and STEO baseline outlook." },
+    { "source": "CME", "description": "WTI, RBOB, and ULSD futures and settlement curves." },
+    { "source": "ICE", "description": "Brent futures term structure and prompt spreads." },
+    { "source": "NRCan", "description": "Canadian refined-product benchmark context for regional extension." }
+  ]
+}

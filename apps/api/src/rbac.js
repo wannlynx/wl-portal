@@ -5,9 +5,23 @@ function requireAuth(req, res, next) {
   return next();
 }
 
+function userRoles(user) {
+  if (!user) return [];
+  const roles = new Set();
+  if (user.role) roles.add(user.role);
+  if (user.jobberRole) roles.add(user.jobberRole);
+  for (const membership of user.jobberMemberships || []) {
+    if (membership.role) roles.add(membership.role);
+  }
+  return Array.from(roles);
+}
+
 function canAccessSite(user, siteId) {
   if (!user) return false;
-  if (user.role === "manager") return true;
+  const roles = userRoles(user);
+  if (roles.includes("system_manager")) return true;
+  if (roles.includes("admin")) return true;
+  if (roles.includes("manager")) return user.siteIds?.includes(siteId);
   if (user.role === "service_tech") return user.siteIds?.includes(siteId);
   if (user.role === "operator") return user.siteIds?.includes(siteId);
   return false;
@@ -24,7 +38,14 @@ function requireSiteAccess(req, res, next) {
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    const grantedRoles = userRoles(req.user);
+    if (grantedRoles.includes("system_manager")) {
+      return next();
+    }
+    if (grantedRoles.includes("admin")) {
+      return next();
+    }
+    if (!grantedRoles.some((role) => roles.includes(role))) {
       return res.status(403).json({ error: "Forbidden" });
     }
     return next();
@@ -35,5 +56,6 @@ module.exports = {
   requireAuth,
   requireSiteAccess,
   requireRole,
-  canAccessSite
+  canAccessSite,
+  userRoles
 };

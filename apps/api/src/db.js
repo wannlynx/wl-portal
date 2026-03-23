@@ -63,6 +63,17 @@ async function initDb() {
       name TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS jobbers (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      oauth_domain TEXT NOT NULL DEFAULT '',
+      logo_url TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       org_id TEXT NOT NULL REFERENCES orgs(id),
@@ -70,6 +81,16 @@ async function initDb() {
       name TEXT NOT NULL,
       role TEXT NOT NULL,
       password TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_jobber_roles (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      jobber_id TEXT NOT NULL REFERENCES jobbers(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      is_default BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (user_id, jobber_id)
     );
 
     CREATE TABLE IF NOT EXISTS user_site_assignments (
@@ -245,6 +266,62 @@ async function initDb() {
   await query(`
     ALTER TABLE alarm_events
     ADD COLUMN IF NOT EXISTS reported_state TEXT;
+  `);
+
+  await query(`
+    ALTER TABLE jobbers
+    ADD COLUMN IF NOT EXISTS logo_url TEXT NOT NULL DEFAULT '';
+  `);
+
+  await query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS oauth_provider TEXT NOT NULL DEFAULT '';
+  `);
+
+  await query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS oauth_subject TEXT NOT NULL DEFAULT '';
+  `);
+
+  await query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+  `);
+
+  await query(`
+    ALTER TABLE sites
+    ADD COLUMN IF NOT EXISTS jobber_id TEXT REFERENCES jobbers(id);
+  `);
+
+  await query(`
+    UPDATE sites
+    SET jobber_id = COALESCE(
+      jobber_id,
+      (
+        SELECT id
+        FROM jobbers
+        WHERE org_id = sites.org_id
+        ORDER BY created_at ASC
+        LIMIT 1
+      )
+    )
+    WHERE jobber_id IS NULL;
+  `);
+
+  await query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_oauth_identity_idx
+    ON users(oauth_provider, oauth_subject)
+    WHERE oauth_provider <> '' AND oauth_subject <> '';
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS sites_jobber_id_idx
+    ON sites(jobber_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS user_jobber_roles_jobber_idx
+    ON user_jobber_roles(jobber_id);
   `);
 }
 

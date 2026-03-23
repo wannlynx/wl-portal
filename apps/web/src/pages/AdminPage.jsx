@@ -15,9 +15,11 @@ const emptyStationEdit = { name: "", address: "", postalCode: "", region: "" };
 const emptyConfig = { atgHost: "", atgPort: "10001", atgPollIntervalSec: "60" };
 const emptyTank = { atgTankId: "", label: "", product: "", capacityLiters: "" };
 const emptyPump = { pumpNumber: "", label: "", sideAip: "", sideBip: "", port: "5201" };
+const emptyBranding = { name: "", logoUrl: "" };
 
 function workspaceLabel(panel, selectedTankId, selectedPumpId) {
   if (panel === "createStation") return "Create Station";
+  if (panel === "branding") return "Jobber Branding";
   if (panel === "tank") return selectedTankId ? "Tank Editor" : "Add Tank";
   if (panel === "pump") return selectedPumpId ? "Pump Editor" : "Add Pump";
   return "";
@@ -30,7 +32,7 @@ function statusTone(site) {
   return "healthy";
 }
 
-export function AdminPage() {
+export function AdminPage({ user, jobber, onJobberUpdated }) {
   const [sites, setSites] = useState([]);
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [siteDetail, setSiteDetail] = useState(null);
@@ -45,6 +47,7 @@ export function AdminPage() {
   const [configForm, setConfigForm] = useState(emptyConfig);
   const [tankForm, setTankForm] = useState(emptyTank);
   const [pumpForm, setPumpForm] = useState(emptyPump);
+  const [brandingForm, setBrandingForm] = useState(emptyBranding);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [stationCodeError, setStationCodeError] = useState("");
@@ -90,6 +93,13 @@ export function AdminPage() {
   }
 
   useEffect(() => {
+    setBrandingForm({
+      name: jobber?.name || "",
+      logoUrl: jobber?.logoUrl || ""
+    });
+  }, [jobber]);
+
+  useEffect(() => {
     (async () => {
       try {
         await loadSites();
@@ -123,6 +133,7 @@ export function AdminPage() {
   const topOutstandingAlerts = outstandingAlerts.slice(0, 4);
   const healthTone = statusTone(selectedSite);
   const activeWorkspace = workspaceLabel(activePanel, selectedTankId, selectedPumpId);
+  const canManageBranding = user?.jobberRole === "admin";
 
   function clearStatus() {
     setMessage("");
@@ -224,6 +235,32 @@ export function AdminPage() {
         atgPollIntervalSec: Number(configForm.atgPollIntervalSec || 60)
       });
       setMessage("Config saved.");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function onLogoFileSelected(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setBrandingForm((form) => ({ ...form, logoUrl: reader.result }));
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function saveBranding(e) {
+    e.preventDefault();
+    clearStatus();
+    try {
+      const updated = await api.updateCurrentJobber({
+        name: brandingForm.name.trim() || jobber?.name || "Jobber",
+        logoUrl: brandingForm.logoUrl
+      });
+      onJobberUpdated(updated);
+      setMessage("Jobber branding updated.");
     } catch (err) {
       setError(err.message);
     }
@@ -468,6 +505,9 @@ export function AdminPage() {
           <aside className="admin-left-pane admin-hud-panel admin-nav-panel">
             <div className="admin-panel-label">Mode Select</div>
             <div className="admin-mode-grid">
+              {canManageBranding ? (
+                <button className={`left-panel-btn admin-mode-btn ${activePanel === "branding" ? "left-panel-btn-active" : ""}`} onClick={() => setActivePanel("branding")}>Branding</button>
+              ) : null}
               <button className={`left-panel-btn admin-mode-btn ${activePanel === "createStation" ? "left-panel-btn-active" : ""}`} onClick={() => setActivePanel("createStation")}>Add Station</button>
               <button className={`left-panel-btn admin-mode-btn ${activePanel === "station" ? "left-panel-btn-active" : ""}`} onClick={() => setActivePanel("station")}>Station</button>
               <button className={`left-panel-btn admin-mode-btn ${activePanel === "config" ? "left-panel-btn-active" : ""}`} onClick={() => setActivePanel("config")}>ATG Config</button>
@@ -477,8 +517,8 @@ export function AdminPage() {
 
             <div className="admin-signal-card">
               <span>Current Focus</span>
-              <strong>{selectedSite?.name || "Awaiting station selection"}</strong>
-              <em>{selectedSite?.address ? `${selectedSite.address} ${selectedSite.postalCode || ""}` : "Create or select a station to load details"}</em>
+              <strong>{jobber?.name || selectedSite?.name || "Awaiting station selection"}</strong>
+              <em>{jobber?.slug ? `${sites.length} visible locations for ${jobber.slug}` : selectedSite?.address ? `${selectedSite.address} ${selectedSite.postalCode || ""}` : "Create or select a station to load details"}</em>
             </div>
           </aside>
 
@@ -492,6 +532,40 @@ export function AdminPage() {
                 <span>{healthTone}</span>
               </div>
             </div>
+
+            {canManageBranding && activePanel === "branding" && (
+              <form className="admin-form admin-hud-form" onSubmit={saveBranding}>
+                <div className="admin-form-intro">
+                  <strong>Jobber Branding</strong>
+                  <span>Upload the logo that should replace the current mark in the top left corner for this jobber.</span>
+                </div>
+                <input
+                  value={brandingForm.name}
+                  onChange={(e) => setBrandingForm((form) => ({ ...form, name: e.target.value }))}
+                  placeholder="Jobber Name"
+                />
+                <label className="admin-file-field">
+                  <span>Logo Upload</span>
+                  <input type="file" accept="image/*" onChange={(e) => onLogoFileSelected(e.target.files?.[0])} />
+                </label>
+                <input
+                  value={brandingForm.logoUrl}
+                  onChange={(e) => setBrandingForm((form) => ({ ...form, logoUrl: e.target.value }))}
+                  placeholder="Logo URL or data URL"
+                />
+                <div className="admin-brand-preview">
+                  {brandingForm.logoUrl ? (
+                    <img src={brandingForm.logoUrl} alt={brandingForm.name || "Jobber logo"} className="admin-brand-image" />
+                  ) : (
+                    <div className="admin-empty-mini">No custom logo saved yet</div>
+                  )}
+                </div>
+                <div className="inline">
+                  <button type="submit" className="admin-hud-cta">Save Branding</button>
+                  <button type="button" onClick={() => setBrandingForm((form) => ({ ...form, logoUrl: "" }))}>Clear Logo</button>
+                </div>
+              </form>
+            )}
 
             {activePanel === "createStation" && (
               <form className="admin-form admin-hud-form" onSubmit={submitCreateStation}>
@@ -575,7 +649,7 @@ export function AdminPage() {
               </form>
             )}
 
-            {!selectedSiteId && activePanel !== "createStation" && (
+            {!selectedSiteId && !["createStation", "branding"].includes(activePanel) && (
               <div className="admin-empty-state">
                 Select or create a station first.
               </div>

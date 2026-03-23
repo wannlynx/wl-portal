@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
+import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import { divIcon } from "leaflet";
 
 const DEFAULT_CENTER = [37.7749, -122.4194];
 const geocodeCache = new Map();
@@ -53,6 +54,25 @@ function FitToPoints({ points }) {
   return null;
 }
 
+function FocusSelectedPoint({ point }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!point) return;
+    map.flyTo([point.lat, point.lon], Math.max(map.getZoom(), 12), {
+      animate: true,
+      duration: 1.1
+    });
+  }, [map, point]);
+  return null;
+}
+
+const selectedSitePin = divIcon({
+  className: "site-map-selected-pin-wrap",
+  html: '<div class="site-map-selected-pin"></div>',
+  iconSize: [24, 34],
+  iconAnchor: [12, 34]
+});
+
 export function SiteMap({ sites, onSelect, selectedSiteId }) {
   const [points, setPoints] = useState([]);
 
@@ -74,6 +94,7 @@ export function SiteMap({ sites, onSelect, selectedSiteId }) {
   }, [sites]);
 
   const keyed = useMemo(() => points.map((p) => ({ ...p, key: p.site.id })), [points]);
+  const selectedPoint = useMemo(() => keyed.find((point) => point.site.id === selectedSiteId) || null, [keyed, selectedSiteId]);
 
   return (
     <div className="real-map">
@@ -83,13 +104,14 @@ export function SiteMap({ sites, onSelect, selectedSiteId }) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <FitToPoints points={keyed} />
+        <FocusSelectedPoint point={selectedPoint} />
         {keyed.map(({ key, site, lat, lon }) => (
           <CircleMarker
             key={key}
             center={[lat, lon]}
-            radius={selectedSiteId === site.id ? 10 : 8}
+            radius={8}
             pathOptions={{
-              color: selectedSiteId === site.id ? "#0f3f5a" : "#276c90",
+              color: "#276c90",
               fillColor: site.criticalCount > 0 ? "#c53e30" : "#2f7e4d",
               fillOpacity: 0.9
             }}
@@ -107,6 +129,15 @@ export function SiteMap({ sites, onSelect, selectedSiteId }) {
             </Popup>
           </CircleMarker>
         ))}
+        {selectedPoint ? (
+          <Marker position={[selectedPoint.lat, selectedPoint.lon]} icon={selectedSitePin}>
+            <Popup>
+              <strong>{selectedPoint.site.name}</strong>
+              <div>{selectedPoint.site.address}</div>
+              <div>{selectedPoint.site.postalCode || "ZIP n/a"}</div>
+            </Popup>
+          </Marker>
+        ) : null}
       </MapContainer>
     </div>
   );

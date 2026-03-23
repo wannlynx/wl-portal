@@ -1,0 +1,56 @@
+
+> petroleum-api@0.1.0 seed
+> node src/seed.js
+
+node:events:486
+      throw er; // Unhandled 'error' event
+      ^
+
+error: terminating connection due to administrator command
+    at parseErrorMessage (C:\Users\deepa\source\repos\Petroleum\node_modules\pg-protocol\dist\parser.js:305:11)
+    at Parser.handlePacket (C:\Users\deepa\source\repos\Petroleum\node_modules\pg-protocol\dist\parser.js:143:27)
+    at Parser.parse (C:\Users\deepa\source\repos\Petroleum\node_modules\pg-protocol\dist\parser.js:37:38)
+    at Socket.<anonymous> (C:\Users\deepa\source\repos\Petroleum\node_modules\pg-protocol\dist\index.js:11:42)
+    at Socket.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+    at Readable.push (node:internal/streams/readable:390:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:23)
+Emitted 'error' event on Client instance at:
+    at Client._handleErrorEvent (C:\Users\deepa\source\repos\Petroleum\node_modules\pg\lib\client.js:393:10)
+    at Client._handleErrorMessage (C:\Users\deepa\source\repos\Petroleum\node_modules\pg\lib\client.js:404:12)
+    at Connection.emit (node:events:508:28)
+    at C:\Users\deepa\source\repos\Petroleum\node_modules\pg\lib\connection.js:115:12
+    at Parser.parse (C:\Users\deepa\source\repos\Petroleum\node_modules\pg-protocol\dist\parser.js:38:17)
+    at Socket.<anonymous> (C:\Users\deepa\source\repos\Petroleum\node_modules\pg-protocol\dist\index.js:11:42)
+    at Socket.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+    at Readable.push (node:internal/streams/readable:390:5) {
+  length: 116,
+  severity: 'FATAL',
+  code: '57P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '3315',
+  routine: 'ProcessInterrupts'
+}
+
+Node.js v24.13.0
+npm error Lifecycle script `seed` failed with error:
+npm error code 1
+npm error path C:\Users\deepa\source\repos\Petroleum\apps\api
+npm error workspace petroleum-api@0.1.0
+npm error location C:\Users\deepa\source\repos\Petroleum\apps\api
+npm error command failed
+npm error command C:\Windows\system32\cmd.exe /d /s /c node src/seed.js

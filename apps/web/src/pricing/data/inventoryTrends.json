@@ -1,0 +1,92 @@
+{
+  "series": [
+    {
+      "key": "crude",
+      "label": "Crude Stocks",
+      "unit": "MMbbl",
+      "points": [
+        { "date": "2025-11-10", "value": 457.2 },
+        { "date": "2025-11-17", "value": 455.9 },
+        { "date": "2025-11-24", "value": 454.6 },
+        { "date": "2025-12-01", "value": 452.8 },
+        { "date": "2025-12-08", "value": 450.7 },
+        { "date": "2025-12-15", "value": 449.4 },
+        { "date": "2025-12-22", "value": 447.9 },
+        { "date": "2025-12-29", "value": 446.8 },
+        { "date": "2026-01-05", "value": 445.7 },
+        { "date": "2026-01-12", "value": 444.2 },
+        { "date": "2026-01-19", "value": 442.6 },
+        { "date": "2026-01-26", "value": 441.1 },
+        { "date": "2026-02-02", "value": 440.4 },
+        { "date": "2026-02-09", "value": 439.8 },
+        { "date": "2026-02-16", "value": 440.1 },
+        { "date": "2026-02-23", "value": 439.6 },
+        { "date": "2026-03-02", "value": 438.4 },
+        { "date": "2026-03-09", "value": 436.1 },
+        { "date": "2026-03-16", "value": 434.7 }
+      ],
+      "annotations": [
+        { "date": "2026-01-19", "label": "Large draw", "detail": "Cold-weather demand and stronger refinery runs." },
+        { "date": "2026-03-09", "label": "Steady draw", "detail": "Export pull kept U.S. balances tighter." }
+      ]
+    },
+    {
+      "key": "gasoline",
+      "label": "Gasoline Stocks",
+      "unit": "MMbbl",
+      "points": [
+        { "date": "2025-11-10", "value": 255.6 },
+        { "date": "2025-11-17", "value": 254.8 },
+        { "date": "2025-11-24", "value": 254.1 },
+        { "date": "2025-12-01", "value": 253.2 },
+        { "date": "2025-12-08", "value": 252.4 },
+        { "date": "2025-12-15", "value": 251.3 },
+        { "date": "2025-12-22", "value": 250.7 },
+        { "date": "2025-12-29", "value": 249.9 },
+        { "date": "2026-01-05", "value": 249.1 },
+        { "date": "2026-01-12", "value": 248.4 },
+        { "date": "2026-01-19", "value": 247.9 },
+        { "date": "2026-01-26", "value": 247.1 },
+        { "date": "2026-02-02", "value": 246.8 },
+        { "date": "2026-02-09", "value": 246.4 },
+        { "date": "2026-02-16", "value": 246.7 },
+        { "date": "2026-02-23", "value": 246.2 },
+        { "date": "2026-03-02", "value": 244.9 },
+        { "date": "2026-03-09", "value": 243.4 },
+        { "date": "2026-03-16", "value": 242.1 }
+      ],
+      "annotations": [
+        { "date": "2026-03-02", "label": "Draw", "detail": "Prompt gasoline availability tightened into spring logistics." }
+      ]
+    },
+    {
+      "key": "distillate",
+      "label": "Distillate Stocks",
+      "unit": "MMbbl",
+      "points": [
+        { "date": "2025-11-10", "value": 123.7 },
+        { "date": "2025-11-17", "value": 123.4 },
+        { "date": "2025-11-24", "value": 123.1 },
+        { "date": "2025-12-01", "value": 122.8 },
+        { "date": "2025-12-08", "value": 122.2 },
+        { "date": "2025-12-15", "value": 121.7 },
+        { "date": "2025-12-22", "value": 121.5 },
+        { "date": "2025-12-29", "value": 121.4 },
+        { "date": "2026-01-05", "value": 121.1 },
+        { "date": "2026-01-12", "value": 120.8 },
+        { "date": "2026-01-19", "value": 120.3 },
+        { "date": "2026-01-26", "value": 119.8 },
+        { "date": "2026-02-02", "value": 119.2 },
+        { "date": "2026-02-09", "value": 119.1 },
+        { "date": "2026-02-16", "value": 119.4 },
+        { "date": "2026-02-23", "value": 119.0 },
+        { "date": "2026-03-02", "value": 118.8 },
+        { "date": "2026-03-09", "value": 118.5 },
+        { "date": "2026-03-16", "value": 118.2 }
+      ],
+      "annotations": [
+        { "date": "2026-02-02", "label": "Tight distillate", "detail": "Low middle-distillate cushion kept diesel supported." }
+      ]
+    }
+  ]
+}

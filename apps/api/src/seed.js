@@ -255,6 +255,12 @@ function buildConfiguredSites(config, layout) {
   }));
 }
 
+function isCaliforniaSite(site) {
+  const region = String(site.region || "").toLowerCase();
+  const address = String(site.address || "").toLowerCase();
+  return region.includes("california") || address.includes(", ca");
+}
+
 function buildImportedHistoryPoints(siteIndex, tankIndex, site, tank) {
   const reading = tank.importedReading;
   const capacity = Number(tank.capacityLiters || 0);
@@ -324,6 +330,8 @@ async function seedDatabase() {
   const nowMs = Date.now();
   const now = new Date(nowMs).toISOString();
   const orgId = "org-demo";
+  const californiaJobberId = "jobber-california";
+  const nonCaliforniaJobberId = "jobber-non-california";
   const configuredSites = buildConfiguredSites(config, layout);
   const importedSites = buildImportedSites(parseInventoryCsv());
   const allSites = [...configuredSites, ...importedSites];
@@ -332,6 +340,7 @@ async function seedDatabase() {
   await initDb();
   await tx(async (client) => {
     await client.query("DELETE FROM user_site_assignments");
+    await client.query("DELETE FROM user_jobber_roles");
     await client.query("DELETE FROM alarm_events");
     await client.query("DELETE FROM atg_inventory_readings");
     await client.query("DELETE FROM tank_measurements");
@@ -344,14 +353,31 @@ async function seedDatabase() {
     await client.query("DELETE FROM sites");
     await client.query("DELETE FROM audit_log");
     await client.query("DELETE FROM users");
+    await client.query("DELETE FROM jobbers");
     await client.query("DELETE FROM orgs");
 
     await client.query("INSERT INTO orgs(id, name) VALUES ($1, $2)", [orgId, config.org?.name || "Demo Org"]);
+    const jobbers = [
+      [californiaJobberId, orgId, "California Jobber", "california-jobber", "california.demo", "", now, now],
+      [nonCaliforniaJobberId, orgId, "Non-California Jobber", "non-california-jobber", "noncal.demo", "", now, now]
+    ];
+    for (const jobber of jobbers) {
+      await client.query(
+        `INSERT INTO jobbers(id, org_id, name, slug, oauth_domain, logo_url, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        jobber
+      );
+    }
 
     const users = [
+      ["user-system-manager", orgId, "system.manager@demo.com", "System Manager", "system_manager", "demo123"],
       ["user-manager", orgId, "manager@demo.com", "Demo Manager", "manager", "demo123"],
       ["user-tech", orgId, "tech@demo.com", "Demo Tech", "service_tech", "demo123"],
-      ["user-operator", orgId, "operator@demo.com", "Demo Operator", "operator", "demo123"]
+      ["user-operator", orgId, "operator@demo.com", "Demo Operator", "operator", "demo123"],
+      ["user-ca-admin", orgId, "admin.ca@demo.com", "California Admin", "operator", "demo123"],
+      ["user-ca-manager", orgId, "manager.ca@demo.com", "California Manager", "operator", "demo123"],
+      ["user-nca-admin", orgId, "admin.nonca@demo.com", "Non-California Admin", "operator", "demo123"],
+      ["user-nca-manager", orgId, "manager.nonca@demo.com", "Non-California Manager", "operator", "demo123"]
     ];
 
     for (const row of users) {
@@ -361,17 +387,38 @@ async function seedDatabase() {
       );
     }
 
+    const memberships = [
+      ["user-manager", californiaJobberId, "admin", true, now, now],
+      ["user-tech", californiaJobberId, "manager", false, now, now],
+      ["user-operator", californiaJobberId, "manager", false, now, now],
+      ["user-ca-admin", californiaJobberId, "admin", true, now, now],
+      ["user-ca-manager", californiaJobberId, "manager", true, now, now],
+      ["user-nca-admin", nonCaliforniaJobberId, "admin", true, now, now],
+      ["user-nca-manager", nonCaliforniaJobberId, "manager", true, now, now]
+    ];
+
+    for (const membership of memberships) {
+      await client.query(
+        `INSERT INTO user_jobber_roles(user_id, jobber_id, role, is_default, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        membership
+      );
+    }
+
     for (let siteIndex = 0; siteIndex < allSites.length; siteIndex += 1) {
       const site = allSites[siteIndex];
       const siteId = `site-${site.siteCode}`;
-      seededSiteMeta.push({ siteId, site });
+      const jobberId = isCaliforniaSite(site) ? californiaJobberId : nonCaliforniaJobberId;
+      seededSiteMeta.push({ siteId, site, jobberId });
 
       await client.query(
-        `INSERT INTO sites(id, org_id, site_code, name, address, postal_code, region, lat, lon, timezone, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        `INSERT INTO sites(
+          id, org_id, jobber_id, site_code, name, address, postal_code, region, lat, lon, timezone, created_at, updated_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           siteId,
           orgId,
+          jobberId,
           site.siteCode,
           site.name,
           site.address,
@@ -551,15 +598,27 @@ async function seedDatabase() {
     }
 
     if (seededSiteMeta.length > 0) {
+      const firstCaliforniaSite = seededSiteMeta.find((entry) => entry.jobberId === californiaJobberId);
       await client.query(
         "INSERT INTO user_site_assignments(user_id, site_id) VALUES ($1,$2)",
-        ["user-operator", seededSiteMeta[0].siteId]
+        ["user-operator", firstCaliforniaSite?.siteId || seededSiteMeta[0].siteId]
       );
       for (const entry of seededSiteMeta) {
-        await client.query(
-          "INSERT INTO user_site_assignments(user_id, site_id) VALUES ($1,$2)",
-          ["user-tech", entry.siteId]
-        );
+        if (entry.jobberId === californiaJobberId) {
+          await client.query(
+            "INSERT INTO user_site_assignments(user_id, site_id) VALUES ($1,$2)",
+            ["user-tech", entry.siteId]
+          );
+          await client.query(
+            "INSERT INTO user_site_assignments(user_id, site_id) VALUES ($1,$2)",
+            ["user-ca-manager", entry.siteId]
+          );
+        } else {
+          await client.query(
+            "INSERT INTO user_site_assignments(user_id, site_id) VALUES ($1,$2)",
+            ["user-nca-manager", entry.siteId]
+          );
+        }
       }
     }
 

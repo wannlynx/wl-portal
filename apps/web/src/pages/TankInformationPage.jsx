@@ -15,11 +15,11 @@ function formatNumber(value, digits = 0) {
   });
 }
 
-function buildFromIso(range) {
-  const now = Date.now();
-  if (range === "24h") return new Date(now - 24 * 60 * 60 * 1000).toISOString();
-  if (range === "3d") return new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString();
-  return new Date(now - 5 * 24 * 60 * 60 * 1000).toISOString();
+function buildFromIso(anchorIso, range) {
+  const anchorMs = anchorIso ? new Date(anchorIso).getTime() : Date.now();
+  if (range === "24h") return new Date(anchorMs - 24 * 60 * 60 * 1000).toISOString();
+  if (range === "3d") return new Date(anchorMs - 3 * 24 * 60 * 60 * 1000).toISOString();
+  return new Date(anchorMs - 5 * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function buildLatestTankRows(rows) {
@@ -326,6 +326,7 @@ export function TankInformationPage() {
   const [siteAssets, setSiteAssets] = useState({ tanks: [] });
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
+  const [anchorTs, setAnchorTs] = useState("");
   const [filters, setFilters] = useState({
     siteId: initialSiteId,
     tankId: initialTankId,
@@ -381,18 +382,35 @@ export function TankInformationPage() {
   }, [filters.siteId]);
 
   useEffect(() => {
-    const params = {
-      from: buildFromIso(filters.range),
-      limit: filters.tankId ? "2000" : "750"
-    };
-    if (filters.siteId) params.siteId = filters.siteId;
-    if (filters.tankId) params.tankId = filters.tankId;
-    if (filters.product) params.product = filters.product;
-    if (filters.refillOnly) params.refillOnly = "true";
+    const anchorParams = { limit: "1" };
+    if (filters.siteId) anchorParams.siteId = filters.siteId;
+    if (filters.tankId) anchorParams.tankId = filters.tankId;
+    if (filters.product) anchorParams.product = filters.product;
 
     api
-      .getTankInformation(params)
+      .getTankInformation(anchorParams)
+      .then((latestRows) => {
+        const latestReadAt = latestRows[0]?.readAt || "";
+        setAnchorTs(latestReadAt);
+        if (!latestReadAt) {
+          setRows([]);
+          setError("");
+          return null;
+        }
+
+        const params = {
+          from: buildFromIso(latestReadAt, filters.range),
+          to: latestReadAt,
+          limit: filters.tankId ? "2000" : "750"
+        };
+        if (filters.siteId) params.siteId = filters.siteId;
+        if (filters.tankId) params.tankId = filters.tankId;
+        if (filters.product) params.product = filters.product;
+        if (filters.refillOnly) params.refillOnly = "true";
+        return api.getTankInformation(params);
+      })
       .then((data) => {
+        if (!data) return;
         setRows(data);
         setError("");
       })
@@ -464,6 +482,7 @@ export function TankInformationPage() {
           <h3>Filters</h3>
           <span>Review five-minute tank history and refill events</span>
         </div>
+        {anchorTs ? <div className="queue-sub">Latest available reading: {formatDateTime(anchorTs)}</div> : null}
         <div className="filter-row">
           <select
             value={filters.siteId}

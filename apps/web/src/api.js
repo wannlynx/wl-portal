@@ -1,17 +1,63 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:4000" : "https://petroleum-api-production.up.railway.app");
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
+const TOKEN_STORAGE_KEY = "petroleum.auth.token";
 
-let token = "";
+let token = localStorage.getItem(TOKEN_STORAGE_KEY) || "";
 
-export async function loginDefault() {
+function setToken(nextToken) {
+  token = nextToken || "";
+  if (token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  }
+}
+
+export function getToken() {
+  return token;
+}
+
+export function getApiBase() {
+  return API_BASE;
+}
+
+export function logout() {
+  setToken("");
+}
+
+export function completeOAuthLogin(nextToken) {
+  setToken(nextToken);
+}
+
+export async function loginWithPassword(email, password) {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "manager@demo.com", password: "demo123" })
+    body: JSON.stringify({ email, password })
   });
-  if (!res.ok) throw new Error("Login failed");
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Login failed");
+  }
   const data = await res.json();
-  token = data.token;
+  setToken(data.token);
   return data;
+}
+
+export function loginDefault() {
+  return loginWithPassword("manager@demo.com", "demo123");
+}
+
+export async function getOAuthProviders() {
+  const res = await fetch(`${API_BASE}/auth/oauth/providers`);
+  if (!res.ok) throw new Error("Unable to load OAuth providers");
+  return res.json();
+}
+
+export function oauthStartUrl(provider) {
+  const redirectTo = `${window.location.origin}/auth/callback`;
+  const url = new URL(`${API_BASE}/auth/oauth/${provider}/start`);
+  url.searchParams.set("redirectTo", redirectTo);
+  return url.toString();
 }
 
 async function request(path, options = {}) {
@@ -29,6 +75,33 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  getSessionUser: () => request("/auth/me"),
+  getCurrentJobber: () => request("/jobber"),
+  updateCurrentJobber: (payload) =>
+    request("/jobber", {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  getManagementOverview: () => request("/management/overview"),
+  createManagedUser: (payload) =>
+    request("/management/users", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateManagedUser: (userId, payload) =>
+    request(`/management/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  deleteManagedUser: (userId) =>
+    request(`/management/users/${userId}`, {
+      method: "DELETE"
+    }),
+  createManagedJobber: (payload) =>
+    request("/management/jobbers", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   getSites: () => request("/sites"),
   getSite: (siteId) => request(`/sites/${siteId}`),
   getPumps: (siteId) => request(`/sites/${siteId}/pumps`),

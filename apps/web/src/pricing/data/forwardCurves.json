@@ -1,0 +1,56 @@
+{
+  "curves": [
+    {
+      "key": "wti",
+      "label": "WTI",
+      "unit": "USD/bbl",
+      "points": [
+        { "month": "Apr 26", "value": 68.42 },
+        { "month": "May 26", "value": 68.05 },
+        { "month": "Jun 26", "value": 67.66 },
+        { "month": "Jul 26", "value": 67.24 },
+        { "month": "Aug 26", "value": 66.92 },
+        { "month": "Sep 26", "value": 66.61 }
+      ]
+    },
+    {
+      "key": "brent",
+      "label": "Brent",
+      "unit": "USD/bbl",
+      "points": [
+        { "month": "Apr 26", "value": 72.18 },
+        { "month": "May 26", "value": 71.84 },
+        { "month": "Jun 26", "value": 71.43 },
+        { "month": "Jul 26", "value": 71.05 },
+        { "month": "Aug 26", "value": 70.76 },
+        { "month": "Sep 26", "value": 70.51 }
+      ]
+    },
+    {
+      "key": "gasoline",
+      "label": "RBOB",
+      "unit": "USD/gal",
+      "points": [
+        { "month": "Apr 26", "value": 2.19 },
+        { "month": "May 26", "value": 2.17 },
+        { "month": "Jun 26", "value": 2.14 },
+        { "month": "Jul 26", "value": 2.1 },
+        { "month": "Aug 26", "value": 2.06 },
+        { "month": "Sep 26", "value": 2.02 }
+      ]
+    },
+    {
+      "key": "diesel",
+      "label": "ULSD",
+      "unit": "USD/gal",
+      "points": [
+        { "month": "Apr 26", "value": 2.36 },
+        { "month": "May 26", "value": 2.35 },
+        { "month": "Jun 26", "value": 2.33 },
+        { "month": "Jul 26", "value": 2.31 },
+        { "month": "Aug 26", "value": 2.3 },
+        { "month": "Sep 26", "value": 2.28 }
+      ]
+    }
+  ]
+}

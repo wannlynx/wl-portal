@@ -56,9 +56,14 @@ Services:
 
 Demo users:
 
+- System Manager: `system.manager@demo.com` / `demo123`
 - Manager: `manager@demo.com` / `demo123`
 - Service Tech: `tech@demo.com` / `demo123`
 - Operator: `operator@demo.com` / `demo123`
+- California Admin: `admin.ca@demo.com` / `demo123`
+- California Manager: `manager.ca@demo.com` / `demo123`
+- Non-California Admin: `admin.nonca@demo.com` / `demo123`
+- Non-California Manager: `manager.nonca@demo.com` / `demo123`
 
 ## Quick Start (Cross-platform Manual)
 
@@ -89,11 +94,18 @@ Services:
 
 Demo users:
 
+- System Manager: `system.manager@demo.com` / `demo123`
 - Manager: `manager@demo.com` / `demo123`
 - Service Tech: `tech@demo.com` / `demo123`
 - Operator: `operator@demo.com` / `demo123`
+- California Admin: `admin.ca@demo.com` / `demo123`
+- California Manager: `manager.ca@demo.com` / `demo123`
+- Non-California Admin: `admin.nonca@demo.com` / `demo123`
+- Non-California Manager: `manager.nonca@demo.com` / `demo123`
 
 ## Hosting
+
+Current production deployment has moved to Render. The Netlify and Railway notes below are legacy setup notes from the earlier MVP hosting path and should not be used as the source of truth for new auth work.
 
 This repository is configured for:
 
@@ -137,3 +149,19 @@ The exact live URL is not stored in this repo. You can find it in:
 - Ingestion protocols (ATG/Gilbarco) are simulator-only in this iteration.
 - Forecourt layout editor and layout version save are implemented in MVP form.
 - Portfolio map uses OpenStreetMap tiles and geocodes sites from `address + postal_code`.
+
+## Pricing Dashboard
+
+The `Pricing` tab adds an Energy Market Dashboard for crude, gasoline, diesel, inventories, and forward curve context.
+
+- Benchmark KPI cards show current levels, daily and weekly moves, sparklines, and a simple rising/falling/stable status.
+- The Price Trends panel plots WTI, Brent, gasoline, and diesel with `7D`, `30D`, `90D`, and `1Y` views.
+- The Inventory Trends panel compares crude, gasoline, and distillate stocks in either absolute terms or week-over-week change, with annotation markers for notable draws and builds.
+- The Futures / Forward Curve panel summarizes whether each market is in backwardation, contango, or roughly flat structure.
+- The right-side insight cards generate concise drivers, a short outlook, and source coverage notes for business users.
+
+Data and logic locations:
+
+- Mock files live in `apps/web/src/pricing/data/benchmarkPrices.json`, `apps/web/src/pricing/data/inventoryTrends.json`, `apps/web/src/pricing/data/forwardCurves.json`, and `apps/web/src/pricing/data/narrativeDrivers.json`.
+- The data service lives in `apps/web/src/pricing/services/marketDataService.ts`. That is the main place to connect production EIA, CME, ICE, and NRCan APIs later.
+- Narrative and outlook logic lives in `apps/web/src/pricing/utils/marketCalculations.ts`. `buildInsightSummary()` controls the generated bullets, curve interpretation, confidence, and short outlook text.

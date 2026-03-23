@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const { authMiddleware, encodeToken } = require("./auth");
@@ -8,6 +9,7 @@ const { seedIfEmpty } = require("./seed");
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
+const webBaseUrl = process.env.WEB_BASE_URL || "http://localhost:5173";
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -21,7 +23,364 @@ function id(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 }
 
+const oauthProviders = {
+  google: {
+    key: "google",
+    label: "Google",
+    clientId: process.env.OAUTH_GOOGLE_CLIENT_ID || "",
+    clientSecret: process.env.OAUTH_GOOGLE_CLIENT_SECRET || "",
+    callbackUrl: process.env.OAUTH_GOOGLE_CALLBACK_URL || "",
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    userInfoUrl: "https://openidconnect.googleapis.com/v1/userinfo",
+    scope: "openid email profile"
+  }
+};
+
+function base64UrlJson(value) {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+function parseBase64UrlJson(value) {
+  try {
+    return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function providerConfig(name) {
+  const provider = oauthProviders[name];
+  if (!provider) return null;
+  if (!provider.clientId || !provider.clientSecret || !provider.callbackUrl) return null;
+  return provider;
+}
+
+function publicProviderInfo(name) {
+  const provider = oauthProviders[name];
+  return {
+    key: provider.key,
+    label: provider.label,
+    enabled: !!providerConfig(name)
+  };
+}
+
+function oauthState(provider, redirectTo) {
+  return base64UrlJson({
+    provider,
+    redirectTo: redirectTo || `${webBaseUrl}/auth/callback`,
+    nonce: crypto.randomBytes(12).toString("hex"),
+    ts: Date.now()
+  });
+}
+
+function appendParams(target, params, hash = false) {
+  const url = new URL(target);
+  const search = hash ? new URLSearchParams(url.hash.replace(/^#/, "")) : url.searchParams;
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null) continue;
+    search.set(key, String(value));
+  }
+  if (hash) {
+    url.hash = search.toString();
+  }
+  return url.toString();
+}
+
+function redirectWithError(res, redirectTo, error) {
+  res.redirect(appendParams(redirectTo || `${webBaseUrl}/auth/callback`, { error }, true));
+}
+
+async function exchangeCodeForTokens(provider, code) {
+  const body = new URLSearchParams({
+    code,
+    client_id: provider.clientId,
+    client_secret: provider.clientSecret,
+    redirect_uri: provider.callbackUrl,
+    grant_type: "authorization_code"
+  });
+  const response = await fetch(provider.tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`OAuth token exchange failed: ${detail}`);
+  }
+  return response.json();
+}
+
+async function fetchUserInfo(provider, accessToken) {
+  const response = await fetch(provider.userInfoUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`OAuth userinfo fetch failed: ${detail}`);
+  }
+  return response.json();
+}
+
+function emailDomain(email) {
+  const parts = String(email || "").toLowerCase().split("@");
+  return parts.length === 2 ? parts[1] : "";
+}
+
+async function membershipsForUser(userId) {
+  const membershipResult = await query(
+    `SELECT
+      ujr.jobber_id AS "jobberId",
+      ujr.role,
+      ujr.is_default AS "isDefault",
+      j.name AS "jobberName",
+      j.slug AS "jobberSlug"
+     FROM user_jobber_roles ujr
+     JOIN jobbers j ON j.id = ujr.jobber_id
+     WHERE ujr.user_id=$1
+     ORDER BY ujr.is_default DESC, j.name ASC`,
+    [userId]
+  );
+  return membershipResult.rows;
+}
+
+function defaultMembership(memberships) {
+  if (!memberships.length) return null;
+  return memberships.find((membership) => membership.isDefault) || memberships[0];
+}
+
+async function currentJobberForUser(user) {
+  if (!user?.jobberId) return null;
+  const result = await query(
+    `SELECT
+      id,
+      org_id AS "orgId",
+      name,
+      slug,
+      oauth_domain AS "oauthDomain",
+      logo_url AS "logoUrl",
+      created_at AS "createdAt",
+      updated_at AS "updatedAt"
+     FROM jobbers
+     WHERE id=$1`,
+    [user.jobberId]
+  );
+  return result.rows[0] || null;
+}
+
+async function sitesForJobber(jobberId) {
+  const siteRows = await query(
+    `SELECT
+      id,
+      site_code AS "siteCode",
+      name,
+      address,
+      region
+     FROM sites
+     WHERE jobber_id=$1
+     ORDER BY site_code`,
+    [jobberId]
+  );
+  return siteRows.rows;
+}
+
+async function usersForJobber(jobberId) {
+  const [userRows, assignmentRows] = await Promise.all([
+    query(
+      `SELECT
+        u.id,
+        u.name,
+        u.email,
+        ujr.role,
+        ujr.is_default AS "isDefault"
+       FROM user_jobber_roles ujr
+       JOIN users u ON u.id = ujr.user_id
+       WHERE ujr.jobber_id=$1
+       ORDER BY ujr.role, u.name`,
+      [jobberId]
+    ),
+    query(
+      `SELECT usa.user_id AS "userId", usa.site_id AS "siteId"
+       FROM user_site_assignments usa
+       JOIN user_jobber_roles ujr ON ujr.user_id = usa.user_id
+       WHERE ujr.jobber_id=$1`,
+      [jobberId]
+    )
+  ]);
+
+  const siteIdsByUser = new Map();
+  for (const row of assignmentRows.rows) {
+    if (!siteIdsByUser.has(row.userId)) siteIdsByUser.set(row.userId, []);
+    siteIdsByUser.get(row.userId).push(row.siteId);
+  }
+
+  return userRows.rows.map((row) => ({
+    ...row,
+    siteIds: siteIdsByUser.get(row.id) || []
+  }));
+}
+
+async function allJobbers() {
+  const result = await query(
+    `SELECT
+      id,
+      org_id AS "orgId",
+      name,
+      slug,
+      oauth_domain AS "oauthDomain",
+      logo_url AS "logoUrl",
+      created_at AS "createdAt",
+      updated_at AS "updatedAt"
+     FROM jobbers
+     ORDER BY name`
+  );
+  return result.rows;
+}
+
+async function allSitesWithJobbers() {
+  const result = await query(
+    `SELECT
+      s.id,
+      s.jobber_id AS "jobberId",
+      j.name AS "jobberName",
+      s.site_code AS "siteCode",
+      s.name,
+      s.address,
+      s.region
+     FROM sites s
+     JOIN jobbers j ON j.id = s.jobber_id
+     ORDER BY j.name, s.site_code`
+  );
+  return result.rows;
+}
+
+async function allManagedUsers() {
+  const [userRows, assignmentRows] = await Promise.all([
+    query(
+      `SELECT
+        u.id,
+        u.name,
+        u.email,
+        u.role AS "systemRole",
+        ujr.jobber_id AS "jobberId",
+        j.name AS "jobberName",
+        ujr.role,
+        ujr.is_default AS "isDefault"
+       FROM users u
+       LEFT JOIN user_jobber_roles ujr ON ujr.user_id = u.id
+       LEFT JOIN jobbers j ON j.id = ujr.jobber_id
+       WHERE u.role <> 'system_manager'
+       ORDER BY COALESCE(j.name, ''), u.name`
+    ),
+    query(`SELECT user_id AS "userId", site_id AS "siteId" FROM user_site_assignments`)
+  ]);
+
+  const siteIdsByUser = new Map();
+  for (const row of assignmentRows.rows) {
+    if (!siteIdsByUser.has(row.userId)) siteIdsByUser.set(row.userId, []);
+    siteIdsByUser.get(row.userId).push(row.siteId);
+  }
+
+  return userRows.rows.map((row) => ({
+    ...row,
+    siteIds: siteIdsByUser.get(row.id) || []
+  }));
+}
+
+async function managementOverviewForJobber(jobberId) {
+  const [jobber, sites, users] = await Promise.all([
+    currentJobberForUser({ jobberId }),
+    sitesForJobber(jobberId),
+    usersForJobber(jobberId)
+  ]);
+  return { jobber, sites, users };
+}
+
+function requireJobberAdmin(req, res, next) {
+  if (req.user.role === "system_manager") {
+    return next();
+  }
+  if (req.user.jobberRole !== "admin") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  return next();
+}
+
+function normalizeManagedRole(value) {
+  return value === "admin" || value === "manager" ? value : "";
+}
+
+function slugify(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "jobber";
+}
+
+async function ensureManagedUserInJobber(jobberId, userId) {
+  const result = await query(
+    `SELECT
+      u.id,
+      u.name,
+      u.email,
+      ujr.role,
+      ujr.is_default AS "isDefault"
+     FROM users u
+     JOIN user_jobber_roles ujr ON ujr.user_id = u.id
+     WHERE ujr.jobber_id=$1 AND u.id=$2`,
+    [jobberId, userId]
+  );
+  return result.rows[0] || null;
+}
+
+async function managementOverviewForUser(user) {
+  if (user.role === "system_manager") {
+    const [jobbers, sites, users] = await Promise.all([
+      allJobbers(),
+      allSitesWithJobbers(),
+      allManagedUsers()
+    ]);
+    return {
+      scope: "system",
+      jobbers,
+      sites,
+      users
+    };
+  }
+
+  const scoped = await managementOverviewForJobber(user.jobberId);
+  return {
+    scope: "jobber",
+    jobbers: scoped.jobber ? [scoped.jobber] : [],
+    sites: scoped.sites,
+    users: scoped.users,
+    jobber: scoped.jobber
+  };
+}
+
+async function findJobberByEmailDomain(email) {
+  const domain = emailDomain(email);
+  if (!domain) return null;
+  const result = await query(
+    `SELECT id, org_id AS "orgId", name, slug, oauth_domain AS "oauthDomain"
+     FROM jobbers
+     WHERE LOWER(oauth_domain)=$1
+     LIMIT 1`,
+    [domain]
+  );
+  return result.rows[0] || null;
+}
+
 async function siteIdsForUser(user) {
+  if (user.role === "system_manager") {
+    const all = await query("SELECT id FROM sites");
+    return all.rows.map((r) => r.id);
+  }
+  if (user.jobberRole === "admin") {
+    const all = await query(`SELECT id FROM sites WHERE jobber_id=$1`, [user.jobberId]);
+    return all.rows.map((r) => r.id);
+  }
   if (user.role === "manager") {
     const all = await query("SELECT id FROM sites");
     return all.rows.map((r) => r.id);
@@ -36,7 +395,17 @@ async function ensureSitePermission(user, siteId) {
 
 async function hydrateUserWithSites(userId) {
   const userResult = await query(
-    "SELECT id, org_id AS \"orgId\", email, name, role FROM users WHERE id=$1",
+    `SELECT
+      id,
+      org_id AS "orgId",
+      email,
+      name,
+      role,
+      oauth_provider AS "oauthProvider",
+      oauth_subject AS "oauthSubject",
+      last_login_at AS "lastLoginAt"
+     FROM users
+     WHERE id=$1`,
     [userId]
   );
   if (userResult.rowCount === 0) return null;
@@ -44,10 +413,110 @@ async function hydrateUserWithSites(userId) {
     "SELECT site_id AS \"siteId\" FROM user_site_assignments WHERE user_id=$1",
     [userId]
   );
+  const memberships = await membershipsForUser(userId);
+  const selectedMembership = defaultMembership(memberships);
   return {
     ...userResult.rows[0],
+    jobberId: selectedMembership?.jobberId || null,
+    jobberRole: selectedMembership?.role || null,
+    jobberMemberships: memberships,
     siteIds: sitesResult.rows.map((r) => r.siteId)
   };
+}
+
+async function authPayloadForUser(userId) {
+  const user = await hydrateUserWithSites(userId);
+  if (!user) return null;
+  return {
+    token: encodeToken({
+      userId: user.id,
+      role: user.role,
+      orgId: user.orgId,
+      jobberId: user.jobberId,
+      jobberRole: user.jobberRole,
+      jobberMemberships: user.jobberMemberships,
+      siteIds: user.siteIds
+    }),
+    user
+  };
+}
+
+async function provisionOauthUser({ providerKey, profile }) {
+  const oauthSubject = String(profile.sub || "").trim();
+  const email = String(profile.email || "").trim().toLowerCase();
+  if (!oauthSubject || !email) {
+    throw new Error("OAuth profile is missing subject or email");
+  }
+
+  const existingBySubject = await query(
+    `SELECT id
+     FROM users
+     WHERE oauth_provider=$1 AND oauth_subject=$2`,
+    [providerKey, oauthSubject]
+  );
+  if (existingBySubject.rowCount > 0) {
+    const userId = existingBySubject.rows[0].id;
+    await query(
+      `UPDATE users
+       SET email=$1, name=$2, last_login_at=$3
+       WHERE id=$4`,
+      [email, profile.name || email, new Date().toISOString(), userId]
+    );
+    return userId;
+  }
+
+  const existingByEmail = await query(
+    `SELECT id
+     FROM users
+     WHERE LOWER(email)=$1
+     LIMIT 1`,
+    [email]
+  );
+  if (existingByEmail.rowCount > 0) {
+    const userId = existingByEmail.rows[0].id;
+    await query(
+      `UPDATE users
+       SET oauth_provider=$1, oauth_subject=$2, name=$3, last_login_at=$4
+       WHERE id=$5`,
+      [providerKey, oauthSubject, profile.name || email, new Date().toISOString(), userId]
+    );
+    return userId;
+  }
+
+  const matchedJobber = await findJobberByEmailDomain(email);
+  if (!matchedJobber) {
+    throw new Error("No jobber is configured for this email domain");
+  }
+
+  const userId = id("user");
+  const now = new Date().toISOString();
+  const defaultPassword = crypto.randomBytes(24).toString("hex");
+
+  await tx(async (client) => {
+    await client.query(
+      `INSERT INTO users(
+        id, org_id, email, name, role, password, oauth_provider, oauth_subject, last_login_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        userId,
+        matchedJobber.orgId,
+        email,
+        profile.name || email,
+        "operator",
+        defaultPassword,
+        providerKey,
+        oauthSubject,
+        now
+      ]
+    );
+    await client.query(
+      `INSERT INTO user_jobber_roles(user_id, jobber_id, role, is_default, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [userId, matchedJobber.id, "manager", true, now, now]
+    );
+  });
+
+  return userId;
 }
 
 async function summariesForSiteIds(ids) {
@@ -56,6 +525,7 @@ async function summariesForSiteIds(ids) {
   const sites = await query(
     `SELECT
       id,
+      jobber_id AS "jobberId",
       site_code AS "siteCode",
       name,
       address,
@@ -120,12 +590,87 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "petroleum-api", dbConfigured: hasDbConfig(), apiVersion: "2026-03-07-tank-info" });
 });
 
+app.get("/auth/oauth/providers", (_req, res) => {
+  res.json(Object.keys(oauthProviders).map(publicProviderInfo));
+});
+
+app.get(
+  "/auth/oauth/:provider/start",
+  asyncHandler(async (req, res) => {
+    const provider = providerConfig(req.params.provider);
+    if (!provider) {
+      return res.status(400).json({ error: "OAuth provider is not configured" });
+    }
+    const authorizeUrl = new URL(provider.authorizeUrl);
+    authorizeUrl.searchParams.set("client_id", provider.clientId);
+    authorizeUrl.searchParams.set("redirect_uri", provider.callbackUrl);
+    authorizeUrl.searchParams.set("response_type", "code");
+    authorizeUrl.searchParams.set("scope", provider.scope);
+    authorizeUrl.searchParams.set("access_type", "offline");
+    authorizeUrl.searchParams.set("prompt", "select_account");
+    authorizeUrl.searchParams.set("state", oauthState(provider.key, req.query.redirectTo));
+    res.redirect(authorizeUrl.toString());
+  })
+);
+
+app.get(
+  "/auth/oauth/:provider/callback",
+  asyncHandler(async (req, res) => {
+    const provider = providerConfig(req.params.provider);
+    const state = parseBase64UrlJson(req.query.state);
+    const redirectTo = state?.redirectTo || `${webBaseUrl}/auth/callback`;
+
+    if (!provider || state?.provider !== req.params.provider) {
+      return redirectWithError(res, redirectTo, "oauth_provider_mismatch");
+    }
+    if (!req.query.code) {
+      return redirectWithError(res, redirectTo, req.query.error || "oauth_code_missing");
+    }
+    if (typeof state.ts !== "number" || Date.now() - state.ts > 10 * 60 * 1000) {
+      return redirectWithError(res, redirectTo, "oauth_state_expired");
+    }
+
+    try {
+      const tokens = await exchangeCodeForTokens(provider, req.query.code);
+      const profile = await fetchUserInfo(provider, tokens.access_token);
+      const userId = await provisionOauthUser({ providerKey: provider.key, profile });
+      const authData = await authPayloadForUser(userId);
+      if (!authData) {
+        return redirectWithError(res, redirectTo, "oauth_user_not_found");
+      }
+      res.redirect(
+        appendParams(
+          redirectTo,
+          {
+            token: authData.token,
+            provider: provider.key
+          },
+          true
+        )
+      );
+    } catch (error) {
+      console.error("OAuth callback failed:", error.message);
+      return redirectWithError(res, redirectTo, "oauth_login_failed");
+    }
+  })
+);
+
 app.post(
   "/auth/login",
   asyncHandler(async (req, res) => {
     const { email, password } = req.body || {};
     const userResult = await query(
-      "SELECT id, org_id AS \"orgId\", email, name, role FROM users WHERE email=$1 AND password=$2",
+      `SELECT
+        id,
+        org_id AS "orgId",
+        email,
+        name,
+        role,
+        oauth_provider AS "oauthProvider",
+        oauth_subject AS "oauthSubject",
+        last_login_at AS "lastLoginAt"
+       FROM users
+       WHERE email=$1 AND password=$2`,
       [email, password]
     );
     if (userResult.rowCount === 0) return res.status(401).json({ error: "Invalid credentials" });
@@ -133,16 +678,27 @@ app.post(
     const siteRows = await query("SELECT site_id AS \"siteId\" FROM user_site_assignments WHERE user_id=$1", [
       user.id
     ]);
+    const memberships = await membershipsForUser(user.id);
+    const selectedMembership = defaultMembership(memberships);
     const siteIds = siteRows.rows.map((r) => r.siteId);
-    const token = encodeToken({
-      userId: user.id,
-      role: user.role,
-      orgId: user.orgId,
-      siteIds
-    });
+    await query("UPDATE users SET last_login_at=$1 WHERE id=$2", [new Date().toISOString(), user.id]);
     res.json({
-      token,
-      user: { ...user, siteIds }
+      token: encodeToken({
+        userId: user.id,
+        role: user.role,
+        orgId: user.orgId,
+        jobberId: selectedMembership?.jobberId || null,
+        jobberRole: selectedMembership?.role || null,
+        jobberMemberships: memberships,
+        siteIds
+      }),
+      user: {
+        ...user,
+        jobberId: selectedMembership?.jobberId || null,
+        jobberRole: selectedMembership?.role || null,
+        jobberMemberships: memberships,
+        siteIds
+      }
     });
   })
 );
@@ -154,6 +710,277 @@ app.get(
     const user = await hydrateUserWithSites(req.user.userId);
     if (!user) return res.status(404).json({ error: "User not found" });
     res.json(user);
+  })
+);
+
+app.get(
+  "/jobber",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const jobber = await currentJobberForUser(req.user);
+    if (!jobber) return res.status(404).json({ error: "Jobber not found" });
+    res.json(jobber);
+  })
+);
+
+app.patch(
+  "/jobber",
+  requireAuth,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const body = req.body || {};
+    const current = await currentJobberForUser(req.user);
+    if (!current) return res.status(404).json({ error: "Jobber not found" });
+
+    await query(
+      `UPDATE jobbers
+       SET name=$1, logo_url=$2, updated_at=$3
+       WHERE id=$4`,
+      [
+        body.name?.trim() || current.name,
+        typeof body.logoUrl === "string" ? body.logoUrl.trim() : current.logoUrl,
+        new Date().toISOString(),
+        req.user.jobberId
+      ]
+    );
+
+    const updated = await currentJobberForUser(req.user);
+    res.json(updated);
+  })
+);
+
+app.get(
+  "/management/overview",
+  requireAuth,
+  requireJobberAdmin,
+  asyncHandler(async (req, res) => {
+    const overview = await managementOverviewForUser(req.user);
+    if (overview.scope === "jobber" && !overview.jobber) return res.status(404).json({ error: "Jobber not found" });
+    res.json(overview);
+  })
+);
+
+app.post(
+  "/management/users",
+  requireAuth,
+  requireJobberAdmin,
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const role = normalizeManagedRole(body.role);
+    const targetJobberId = req.user.role === "system_manager" ? String(body.jobberId || "").trim() : req.user.jobberId;
+    const email = String(body.email || "").trim().toLowerCase();
+    const name = String(body.name || "").trim();
+    const password = String(body.password || "").trim();
+    const siteIds = Array.isArray(body.siteIds) ? [...new Set(body.siteIds.map(String))] : [];
+
+    if (!name || !email || !password || !role || !targetJobberId) {
+      return res.status(400).json({ error: "name, email, password, role, and jobberId are required" });
+    }
+
+    const allowedSites = await sitesForJobber(targetJobberId);
+    const allowedSiteIds = new Set(allowedSites.map((site) => site.id));
+    if (siteIds.some((siteId) => !allowedSiteIds.has(siteId))) {
+      return res.status(400).json({ error: "One or more site assignments are outside this jobber" });
+    }
+
+    const existingEmail = await query(
+      `SELECT id FROM users WHERE LOWER(email)=$1 LIMIT 1`,
+      [email]
+    );
+    if (existingEmail.rowCount > 0) {
+      return res.status(400).json({ error: "A user with that email already exists" });
+    }
+
+    const userId = id("user");
+    const now = new Date().toISOString();
+
+    await tx(async (client) => {
+      await client.query(
+        `INSERT INTO users(id, org_id, email, name, role, password, last_login_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [userId, req.user.orgId, email, name, "operator", password, null]
+      );
+      await client.query(
+        `INSERT INTO user_jobber_roles(user_id, jobber_id, role, is_default, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [userId, targetJobberId, role, true, now, now]
+      );
+      for (const siteId of siteIds) {
+        await client.query(
+          `INSERT INTO user_site_assignments(user_id, site_id) VALUES ($1,$2)`,
+          [userId, siteId]
+        );
+      }
+    });
+
+    const overview = await managementOverviewForUser(req.user);
+    res.status(201).json(overview);
+  })
+);
+
+app.patch(
+  "/management/users/:id",
+  requireAuth,
+  requireJobberAdmin,
+  asyncHandler(async (req, res) => {
+    const currentMemberships = await membershipsForUser(req.params.id);
+    const currentMembership = defaultMembership(currentMemberships);
+    if (!currentMembership) return res.status(404).json({ error: "Managed user not found" });
+    if (req.user.role !== "system_manager" && currentMembership.jobberId !== req.user.jobberId) {
+      return res.status(404).json({ error: "Managed user not found" });
+    }
+
+    const managedUser = req.user.role === "system_manager"
+      ? (await allManagedUsers()).find((user) => user.id === req.params.id)
+      : await ensureManagedUserInJobber(req.user.jobberId, req.params.id);
+    if (!managedUser) return res.status(404).json({ error: "Managed user not found" });
+
+    const body = req.body || {};
+    const role = body.role == null ? managedUser.role : normalizeManagedRole(body.role);
+    const targetJobberId = req.user.role === "system_manager"
+      ? String(body.jobberId || currentMembership.jobberId || "").trim()
+      : req.user.jobberId;
+    const email = body.email == null ? managedUser.email : String(body.email).trim().toLowerCase();
+    const name = body.name == null ? managedUser.name : String(body.name).trim();
+    const password = body.password == null ? "" : String(body.password).trim();
+    const siteIds = Array.isArray(body.siteIds) ? [...new Set(body.siteIds.map(String))] : null;
+
+    if (!name || !email || !role || !targetJobberId) {
+      return res.status(400).json({ error: "name, email, role, and jobberId are required" });
+    }
+
+    const existingEmail = await query(
+      `SELECT id FROM users WHERE LOWER(email)=$1 AND id<>$2 LIMIT 1`,
+      [email, req.params.id]
+    );
+    if (existingEmail.rowCount > 0) {
+      return res.status(400).json({ error: "A user with that email already exists" });
+    }
+
+    const allowedSites = await sitesForJobber(targetJobberId);
+    const allowedSiteIds = new Set(allowedSites.map((site) => site.id));
+    if (siteIds && siteIds.some((siteId) => !allowedSiteIds.has(siteId))) {
+      return res.status(400).json({ error: "One or more site assignments are outside this jobber" });
+    }
+
+    await tx(async (client) => {
+      if (password) {
+        await client.query(
+          `UPDATE users SET name=$1, email=$2, password=$3 WHERE id=$4`,
+          [name, email, password, req.params.id]
+        );
+      } else {
+        await client.query(
+          `UPDATE users SET name=$1, email=$2 WHERE id=$3`,
+          [name, email, req.params.id]
+        );
+      }
+
+      await client.query(
+        `UPDATE user_jobber_roles
+         SET jobber_id=$1, role=$2, updated_at=$3
+         WHERE user_id=$4 AND jobber_id=$5`,
+        [targetJobberId, role, new Date().toISOString(), req.params.id, currentMembership.jobberId]
+      );
+
+      if (siteIds) {
+        await client.query(`DELETE FROM user_site_assignments WHERE user_id=$1`, [req.params.id]);
+        for (const siteId of siteIds) {
+          await client.query(
+            `INSERT INTO user_site_assignments(user_id, site_id) VALUES ($1,$2)`,
+            [req.params.id, siteId]
+          );
+        }
+      }
+    });
+
+    const overview = await managementOverviewForUser(req.user);
+    res.json(overview);
+  })
+);
+
+app.delete(
+  "/management/users/:id",
+  requireAuth,
+  requireJobberAdmin,
+  asyncHandler(async (req, res) => {
+    const currentMemberships = await membershipsForUser(req.params.id);
+    const currentMembership = defaultMembership(currentMemberships);
+    if (!currentMembership) return res.status(404).json({ error: "Managed user not found" });
+    if (req.user.role !== "system_manager" && currentMembership.jobberId !== req.user.jobberId) {
+      return res.status(404).json({ error: "Managed user not found" });
+    }
+    if (req.user.userId === req.params.id) {
+      return res.status(400).json({ error: "You cannot delete your own account" });
+    }
+
+    await tx(async (client) => {
+      await client.query(`DELETE FROM user_site_assignments WHERE user_id=$1`, [req.params.id]);
+      await client.query(`DELETE FROM user_jobber_roles WHERE user_id=$1`, [req.params.id]);
+      await client.query(`DELETE FROM users WHERE id=$1`, [req.params.id]);
+    });
+
+    const overview = await managementOverviewForUser(req.user);
+    res.json(overview);
+  })
+);
+
+app.post(
+  "/management/jobbers",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (req.user.role !== "system_manager") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const body = req.body || {};
+    const jobberName = String(body.jobberName || "").trim();
+    const oauthDomain = String(body.oauthDomain || "").trim().toLowerCase();
+    const adminName = String(body.adminName || "").trim();
+    const adminEmail = String(body.adminEmail || "").trim().toLowerCase();
+    const adminPassword = String(body.adminPassword || "").trim();
+    const logoUrl = String(body.logoUrl || "").trim();
+
+    if (!jobberName || !adminName || !adminEmail || !adminPassword) {
+      return res.status(400).json({ error: "jobberName, adminName, adminEmail, and adminPassword are required" });
+    }
+
+    const jobberId = id("jobber");
+    const slug = slugify(jobberName);
+    const adminUserId = id("user");
+    const now = new Date().toISOString();
+
+    const existingSlug = await query(`SELECT id FROM jobbers WHERE slug=$1 LIMIT 1`, [slug]);
+    if (existingSlug.rowCount > 0) {
+      return res.status(400).json({ error: "A jobber with a matching name already exists" });
+    }
+
+    const existingEmail = await query(`SELECT id FROM users WHERE LOWER(email)=$1 LIMIT 1`, [adminEmail]);
+    if (existingEmail.rowCount > 0) {
+      return res.status(400).json({ error: "A user with that email already exists" });
+    }
+
+    await tx(async (client) => {
+      await client.query(
+        `INSERT INTO jobbers(id, org_id, name, slug, oauth_domain, logo_url, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [jobberId, req.user.orgId, jobberName, slug, oauthDomain, logoUrl, now, now]
+      );
+      await client.query(
+        `INSERT INTO users(id, org_id, email, name, role, password, last_login_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [adminUserId, req.user.orgId, adminEmail, adminName, "operator", adminPassword, null]
+      );
+      await client.query(
+        `INSERT INTO user_jobber_roles(user_id, jobber_id, role, is_default, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [adminUserId, jobberId, "admin", true, now, now]
+      );
+    });
+
+    const overview = await managementOverviewForUser(req.user);
+    res.status(201).json(overview);
   })
 );
 
@@ -230,11 +1057,12 @@ app.post(
 
     await query(
       `INSERT INTO sites(
-        id, org_id, site_code, name, address, postal_code, region, lat, lon, timezone, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        id, org_id, jobber_id, site_code, name, address, postal_code, region, lat, lon, timezone, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         siteId,
         req.user.orgId,
+        req.user.jobberId,
         body.siteCode,
         body.name,
         body.address || "",
