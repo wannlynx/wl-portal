@@ -213,6 +213,16 @@ export function PricingPage() {
             <div>
               <SectionHeader eyebrow="Market Monitor" title="Energy Market Dashboard" description="Crude, gasoline, diesel, inventories, and forward outlook" />
               <div className="mt-3 text-sm text-energy-slate">Last updated: <span className="font-medium text-energy-ink">{lastUpdatedLabel}</span></div>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={load}
+                  disabled={status === "loading"}
+                  className="rounded-full border border-energy-border bg-white px-4 py-2 text-sm font-semibold text-energy-ink transition hover:border-energy-blue hover:text-energy-blue disabled:cursor-wait disabled:opacity-60"
+                >
+                  {status === "loading" ? "Updating..." : "Update now"}
+                </button>
+              </div>
             </div>
             <div className="rounded-3xl border border-energy-border bg-slate-50 p-4">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-energy-slate">Market Monitor</div>

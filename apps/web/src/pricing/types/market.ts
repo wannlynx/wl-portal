@@ -1,4 +1,4 @@
-export type BenchmarkKey = "wti" | "brent" | "gasoline" | "diesel";
+export type BenchmarkKey = "wti" | "brent" | "gasoline" | "diesel" | "regular" | "midgrade" | "premium";
 export type InventoryKey = "crude" | "gasoline" | "distillate";
 export type CurveStructure = "Backwardation" | "Contango" | "Flat";
 export type TrendDirection = "Rising" | "Falling" | "Stable";
@@ -19,6 +19,15 @@ export interface BenchmarkSnapshot {
   weekAgo: number;
   sparkline: number[];
   historyAnchors?: BenchmarkHistoryAnchor[];
+  regionalSeries?: Record<string, {
+    label: string;
+    current: number;
+    dayAgo: number;
+    weekAgo: number;
+    sparkline: number[];
+    historyAnchors?: BenchmarkHistoryAnchor[];
+  }>;
+  defaultRegion?: string;
 }
 
 export interface PriceHistoryPoint {
@@ -82,7 +91,17 @@ export interface KpiCardModel {
   dailyChange: number;
   weeklyChange: number;
   sparkline: number[];
+  historyAnchors?: BenchmarkHistoryAnchor[];
   status: TrendDirection;
+  regionalSeries?: Record<string, {
+    label: string;
+    current: number;
+    dayAgo: number;
+    weekAgo: number;
+    sparkline: number[];
+    historyAnchors?: BenchmarkHistoryAnchor[];
+  }>;
+  defaultRegion?: string;
 }
 
 export interface CurveSummary {

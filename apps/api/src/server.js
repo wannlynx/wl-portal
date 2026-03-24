@@ -19,6 +19,251 @@ function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
+const EIA_LEAFHANDLER_URLS = {
+  wti: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=D&n=PET&s=RWTC",
+  brent: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=D&n=PET&s=RBRTE",
+  gasoline: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=EMM_EPM0_PTE_NUS_DPG",
+  diesel: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=EMD_EPD2D_PTE_NUS_DPG",
+  crudeStocks: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=WCESTUS1",
+  gasolineStocks: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=WGTSTUS1",
+  distillateStocks: "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=WDISTUS1"
+};
+
+const EIA_RETAIL_REGIONS = [
+  { key: "NUS", label: "U.S." },
+  { key: "R10", label: "East Coast" },
+  { key: "R20", label: "Midwest" },
+  { key: "R30", label: "Gulf Coast" },
+  { key: "R40", label: "Rocky Mountain" },
+  { key: "R50", label: "West Coast" }
+];
+
+const MONTHS = {
+  Jan: 0,
+  Feb: 1,
+  Mar: 2,
+  Apr: 3,
+  May: 4,
+  Jun: 5,
+  Jul: 6,
+  Aug: 7,
+  Sep: 8,
+  Oct: 9,
+  Nov: 10,
+  Dec: 11
+};
+
+function normalizeHtml(value) {
+  return String(value || "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatIsoDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function parseLeafRows(html) {
+  const rows = [];
+  const regex = /<tr>\s*<td class='B6'>([\s\S]*?)<\/td>([\s\S]*?)<\/tr>/gi;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    rows.push({
+      label: normalizeHtml(match[1]).replace(/^\s+/, ""),
+      cells: [...match[2].matchAll(/<td class='B[35]'>([\s\S]*?)<\/td>/gi)].map((cell) => normalizeHtml(cell[1]))
+    });
+  }
+  return rows;
+}
+
+function parseDailyLeafPage(html) {
+  return parseLeafRows(html).flatMap((row) => {
+    const labelMatch = row.label.match(/^(\d{4})\s+([A-Za-z]{3})-\s*(\d{1,2})\s+to\s+([A-Za-z]{3})-\s*(\d{1,2})$/);
+    if (!labelMatch) return [];
+
+    const startYear = Number(labelMatch[1]);
+    const startMonth = MONTHS[labelMatch[2]];
+    const endMonth = MONTHS[labelMatch[4]];
+    const startDay = Number(labelMatch[3]);
+    const endDay = Number(labelMatch[5]);
+    const endYear = endMonth < startMonth ? startYear + 1 : startYear;
+    const startDate = new Date(Date.UTC(startYear, startMonth, startDay));
+    const endDate = new Date(Date.UTC(endYear, endMonth, endDay));
+    const points = [];
+
+    for (let i = 0; i < row.cells.length; i += 1) {
+      const value = row.cells[i];
+      const pointDate = new Date(startDate);
+      pointDate.setUTCDate(startDate.getUTCDate() + i);
+      if (pointDate > endDate || !value) continue;
+      points.push({
+        date: formatIsoDate(pointDate),
+        value: Number(String(value).replace(/,/g, ""))
+      });
+    }
+    return points;
+  });
+}
+
+function parseWeeklyLeafPage(html) {
+  return parseLeafRows(html).flatMap((row) => {
+    const labelMatch = row.label.match(/^(\d{4})-([A-Za-z]{3})$/);
+    if (!labelMatch) return [];
+    const year = Number(labelMatch[1]);
+
+    const points = [];
+    for (let i = 0; i < row.cells.length; i += 2) {
+      const dateText = row.cells[i];
+      const valueText = row.cells[i + 1];
+      if (!dateText || !valueText) continue;
+      const dateMatch = dateText.match(/^(\d{2})\/(\d{2})$/);
+      if (!dateMatch) continue;
+      points.push({
+        date: formatIsoDate(new Date(Date.UTC(year, Number(dateMatch[1]) - 1, Number(dateMatch[2])))),
+        value: Number(String(valueText).replace(/,/g, ""))
+      });
+    }
+    return points;
+  });
+}
+
+async function fetchLeafSeries(url, parser) {
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "PetroleumDashboard/1.0"
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`EIA request failed (${response.status}) for ${url}`);
+  }
+  const html = await response.text();
+  return parser(html);
+}
+
+function latestPoints(points, limit) {
+  return [...points]
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .slice(-limit);
+}
+
+function benchmarkFromSeries({ key, label, unit, points }) {
+  const sorted = latestPoints(points, 400);
+  const current = sorted[sorted.length - 1];
+  const prior = sorted[sorted.length - 2] || current;
+  const priorWeek = sorted[Math.max(0, sorted.length - 6)] || prior;
+  return {
+    key,
+    label,
+    unit,
+    current: current.value,
+    dayAgo: prior.value,
+    weekAgo: priorWeek.value,
+    sparkline: latestPoints(points, 7).map((point) => point.value),
+    historyAnchors: sorted.map((point) => ({ date: point.date, value: point.value }))
+  };
+}
+
+function inventorySeriesFromPoints({ key, label, points }) {
+  return {
+    key,
+    label,
+    unit: "MMbbl",
+    points: latestPoints(points, 60).map((point) => ({
+      date: point.date,
+      value: Number((point.value / 1000).toFixed(1))
+    })),
+    annotations: []
+  };
+}
+
+function retailSeriesUrl(code, regionKey) {
+  return `https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=${code}_${regionKey}_DPG`;
+}
+
+async function regionalRetailSnapshot({ key, label, code }) {
+  const regionSeries = await Promise.all(
+    EIA_RETAIL_REGIONS.map(async (region) => {
+      const points = await fetchLeafSeries(retailSeriesUrl(code, region.key), parseWeeklyLeafPage);
+      const snapshot = benchmarkFromSeries({
+        key,
+        label,
+        unit: "USD/gal",
+        points
+      });
+      return [region.key, {
+        label: region.label,
+        current: snapshot.current,
+        dayAgo: snapshot.dayAgo,
+        weekAgo: snapshot.weekAgo,
+        sparkline: snapshot.sparkline,
+        historyAnchors: latestPoints(points, 7).map((point) => ({ date: point.date, value: point.value }))
+      }];
+    })
+  );
+
+  const national = regionSeries.find(([regionKey]) => regionKey === "NUS");
+  const nationalPoints = national?.[1]?.historyAnchors || [];
+  return {
+    ...(national ? {
+      key,
+      label,
+      unit: "USD/gal",
+      current: national[1].current,
+      dayAgo: national[1].dayAgo,
+      weekAgo: national[1].weekAgo,
+      sparkline: national[1].sparkline,
+      historyAnchors: nationalPoints
+    } : {}),
+    regionalSeries: Object.fromEntries(regionSeries),
+    defaultRegion: "NUS"
+  };
+}
+
+async function livePricingSnapshot() {
+  const [
+    wtiPoints,
+    brentPoints,
+    gasolinePoints,
+    regularRetail,
+    midgradeRetail,
+    premiumRetail,
+    dieselRetail,
+    crudeStockPoints,
+    gasolineStockPoints,
+    distillateStockPoints
+  ] = await Promise.all([
+    fetchLeafSeries(EIA_LEAFHANDLER_URLS.wti, parseDailyLeafPage),
+    fetchLeafSeries(EIA_LEAFHANDLER_URLS.brent, parseDailyLeafPage),
+    fetchLeafSeries(EIA_LEAFHANDLER_URLS.gasoline, parseWeeklyLeafPage),
+    regionalRetailSnapshot({ key: "regular", label: "Regular Gasoline", code: "EMM_EPMR_PTE" }),
+    regionalRetailSnapshot({ key: "midgrade", label: "Midgrade Gasoline", code: "EMM_EPMM_PTE" }),
+    regionalRetailSnapshot({ key: "premium", label: "Premium Gasoline", code: "EMM_EPMP_PTE" }),
+    regionalRetailSnapshot({ key: "diesel", label: "Diesel", code: "EMD_EPD2D_PTE" }),
+    fetchLeafSeries(EIA_LEAFHANDLER_URLS.crudeStocks, parseWeeklyLeafPage),
+    fetchLeafSeries(EIA_LEAFHANDLER_URLS.gasolineStocks, parseWeeklyLeafPage),
+    fetchLeafSeries(EIA_LEAFHANDLER_URLS.distillateStocks, parseWeeklyLeafPage)
+  ]);
+
+  return {
+    lastUpdated: new Date().toISOString(),
+    benchmarkSnapshots: [
+        benchmarkFromSeries({ key: "wti", label: "WTI Crude", unit: "USD/bbl", points: wtiPoints }),
+        benchmarkFromSeries({ key: "brent", label: "Brent Crude", unit: "USD/bbl", points: brentPoints }),
+        benchmarkFromSeries({ key: "gasoline", label: "RBOB Gasoline", unit: "USD/gal", points: gasolinePoints }),
+        regularRetail,
+        midgradeRetail,
+        premiumRetail,
+        dieselRetail
+      ],
+    inventorySeries: [
+      inventorySeriesFromPoints({ key: "crude", label: "Crude Stocks", points: crudeStockPoints }),
+      inventorySeriesFromPoints({ key: "gasoline", label: "Gasoline Stocks", points: gasolineStockPoints }),
+      inventorySeriesFromPoints({ key: "distillate", label: "Distillate Stocks", points: distillateStockPoints })
+    ]
+  };
+}
+
 function id(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 }
@@ -589,6 +834,15 @@ async function summariesForSiteIds(ids) {
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "petroleum-api", dbConfigured: hasDbConfig(), apiVersion: "2026-03-07-tank-info" });
 });
+
+app.get(
+  "/market/pricing",
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    const snapshot = await livePricingSnapshot();
+    res.json(snapshot);
+  })
+);
 
 app.get("/auth/oauth/providers", (_req, res) => {
   res.json(Object.keys(oauthProviders).map(publicProviderInfo));

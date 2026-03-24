@@ -83,7 +83,10 @@ export function buildBenchmarkCards(benchmarks: BenchmarkSnapshot[]): KpiCardMod
     dailyChange: round(item.current - item.dayAgo, 2),
     weeklyChange: round(item.current - item.weekAgo, 2),
     sparkline: item.sparkline,
-    status: getTrendDirection(item.current - item.weekAgo)
+    historyAnchors: item.historyAnchors,
+    status: getTrendDirection(item.current - item.weekAgo),
+    regionalSeries: item.regionalSeries,
+    defaultRegion: item.defaultRegion
   }));
 }
 
@@ -101,6 +104,7 @@ export function buildInventoryCards(inventorySeries: InventorySeries[]): KpiCard
       dailyChange: round(last.value - prior.value, 2),
       weeklyChange: round(last.value - priorWeek.value, 2),
       sparkline: series.points.slice(-7).map((point) => point.value),
+      historyAnchors: series.points.slice(-7).map((point) => ({ date: point.date, value: point.value })),
       status: getTrendDirection((last.value - prior.value) * -1)
     };
   });
@@ -145,7 +149,8 @@ export function buildInsightSummary(
 ): MarketInsightSummary {
   const curves = forwardCurves.map(getCurveStructure);
   const wti = benchmarkCards.find((item) => item.key === "wti");
-  const gasoline = benchmarkCards.find((item) => item.key === "gasoline");
+  const gasoline = benchmarkCards.find((item) => item.key === "gasoline")
+    || benchmarkCards.find((item) => item.key === "regular");
   const diesel = benchmarkCards.find((item) => item.key === "diesel");
   const crudeInventorySignal = inventorySignal(inventorySeries.find((item) => item.key === "crude"));
   const gasolineInventorySignal = inventorySignal(inventorySeries.find((item) => item.key === "gasoline"));
@@ -233,6 +238,12 @@ export function getSeriesColor(key: string) {
       return "#275df5";
     case "brent":
       return "#0f8d8d";
+    case "regular":
+      return "#bb7a12";
+    case "midgrade":
+      return "#d49022";
+    case "premium":
+      return "#8a5c0c";
     case "gasoline":
     case "gasolineStocks":
       return "#bb7a12";

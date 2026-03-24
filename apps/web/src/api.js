@@ -170,5 +170,6 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return request(`/tank-information${query ? `?${query}` : ""}`);
   },
+  getPricingSnapshot: () => request("/market/pricing"),
   ackAlert: (id) => request(`/alerts/${id}/ack`, { method: "POST" })
 };

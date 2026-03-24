@@ -1,3 +1,4 @@
+import { api } from "../../api";
 import benchmarkPrices from "../data/benchmarkPrices.json";
 import inventoryTrends from "../data/inventoryTrends.json";
 import forwardCurves from "../data/forwardCurves.json";
@@ -17,23 +18,34 @@ import {
 } from "../utils/marketCalculations";
 
 export async function getPricingDashboardData(): Promise<PricingDashboardData> {
-  // TODO: Replace these mock imports with live EIA, CME, ICE, and NRCan requests.
-  // Keep cross-source aggregation in this service layer so the page remains presentation-focused.
-  await new Promise((resolve) => setTimeout(resolve, 250));
-
-  const benchmarkSnapshots = benchmarkPrices.benchmarks as BenchmarkSnapshot[];
-  const inventorySeries = inventoryTrends.series as InventorySeries[];
+  const fallbackBenchmarks = benchmarkPrices.benchmarks as BenchmarkSnapshot[];
+  const fallbackInventory = inventoryTrends.series as InventorySeries[];
   const curveSeries = forwardCurves.curves as ForwardCurveSeries[];
   const drivers = narrativeDrivers as NarrativeDriverSet;
 
+  let benchmarkSnapshots = fallbackBenchmarks;
+  let inventorySeries = fallbackInventory;
+  let lastUpdated = benchmarkPrices.lastUpdated;
+
+  try {
+    const liveSnapshot = await api.getPricingSnapshot();
+    benchmarkSnapshots = liveSnapshot.benchmarkSnapshots;
+    inventorySeries = liveSnapshot.inventorySeries;
+    lastUpdated = liveSnapshot.lastUpdated;
+  } catch (_error) {
+    // TODO: When live EIA is required in all environments, surface this instead of silently falling back.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
   const priceHistory = buildPriceHistory(benchmarkSnapshots);
+  const cardSnapshots = benchmarkSnapshots.filter((item) => ["wti", "brent", "regular", "midgrade", "premium", "diesel"].includes(item.key));
   const benchmarkCards = [
-    ...buildBenchmarkCards(benchmarkSnapshots.slice(0, 4)),
+    ...buildBenchmarkCards(cardSnapshots),
     ...buildInventoryCards(inventorySeries)
   ];
 
   return {
-    lastUpdated: benchmarkPrices.lastUpdated,
+    lastUpdated,
     sourceBadges: benchmarkPrices.sourceBadges,
     priceHistory,
     benchmarkCards,

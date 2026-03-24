@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Area, AreaChart, TooltipProps, ResponsiveContainer, Tooltip, YAxis, XAxis } from "recharts";
 import type { KpiCardModel } from "../types/market";
-import { formatValue, getSeriesColor } from "../utils/marketCalculations";
+import { formatDateLabel, formatValue, getSeriesColor } from "../utils/marketCalculations";
 
 interface KpiCardProps {
   card: KpiCardModel;
@@ -14,8 +15,10 @@ function SparklineTooltip({
 }: TooltipProps<number, string> & { unit: string }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-2xl border border-energy-border bg-white px-3 py-2 text-sm shadow-energy">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-energy-slate">{String(label)}</div>
+      <div className="rounded-2xl border border-energy-border bg-white px-3 py-2 text-sm shadow-energy">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-energy-slate">
+        {typeof label === "string" && /^\d{4}-\d{2}-\d{2}$/.test(label) ? formatDateLabel(label) : String(label)}
+      </div>
       <div className="mt-1 text-energy-ink">{formatValue(Number(payload[0].value || 0), unit)}</div>
     </div>
   );
@@ -34,15 +37,19 @@ function statusTone(status: KpiCardModel["status"]) {
 }
 
 export function KpiCard({ card }: KpiCardProps) {
-  const today = new Date();
-  const sparklineData = card.sparkline.map((value, index) => {
-    const pointDate = new Date(today);
-    pointDate.setDate(today.getDate() - (card.sparkline.length - 1 - index));
-    return {
-      label: pointDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      value
-    };
-  });
+  const regionEntries = Object.entries(card.regionalSeries || {});
+  const [selectedRegion, setSelectedRegion] = useState(card.defaultRegion || regionEntries[0]?.[0] || "");
+  const regional = selectedRegion ? card.regionalSeries?.[selectedRegion] : null;
+  const currentValue = regional ? regional.current : card.currentValue;
+  const dailyChange = regional ? regional.current - regional.dayAgo : card.dailyChange;
+  const weeklyChange = regional ? regional.current - regional.weekAgo : card.weeklyChange;
+  const sparkline = regional ? regional.sparkline : card.sparkline;
+  const historyAnchors = regional?.historyAnchors || card.historyAnchors || [];
+  const status = regional ? (weeklyChange > 0.15 ? "Rising" : weeklyChange < -0.15 ? "Falling" : "Stable") : card.status;
+  const sparklineData = sparkline.map((value, index) => ({
+    label: historyAnchors[index]?.date || `${index + 1}`,
+    value
+  }));
   const color = getSeriesColor(card.key as never);
 
   return (
@@ -50,26 +57,37 @@ export function KpiCard({ card }: KpiCardProps) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium text-energy-slate">{card.label}</div>
+          {regionEntries.length ? (
+            <select
+              value={selectedRegion}
+              onChange={(event) => setSelectedRegion(event.target.value)}
+              className="mt-2 rounded-xl border border-energy-border bg-slate-50 px-2 py-1 text-xs font-semibold text-energy-ink outline-none"
+            >
+              {regionEntries.map(([regionKey, regionValue]) => (
+                <option key={regionKey} value={regionKey}>{regionValue.label}</option>
+              ))}
+            </select>
+          ) : null}
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold text-energy-ink">{formatValue(card.currentValue, card.unit)}</span>
+            <span className="text-2xl font-semibold text-energy-ink">{formatValue(currentValue, card.unit)}</span>
             <span className="text-xs uppercase tracking-[0.14em] text-energy-slate">{card.unit}</span>
           </div>
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusTone(card.status)}`}>
-          {card.status}
+        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusTone(status)}`}>
+          {status}
         </span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
           <div className="text-[11px] uppercase tracking-[0.14em] text-energy-slate">Daily</div>
-          <div className={`mt-1 font-semibold ${changeTone(card.dailyChange)}`}>
-            {card.dailyChange > 0 ? "+" : ""}{formatValue(card.dailyChange, card.unit)}
+          <div className={`mt-1 font-semibold ${changeTone(dailyChange)}`}>
+            {dailyChange > 0 ? "+" : ""}{formatValue(dailyChange, card.unit)}
           </div>
         </div>
         <div>
           <div className="text-[11px] uppercase tracking-[0.14em] text-energy-slate">Weekly</div>
-          <div className={`mt-1 font-semibold ${changeTone(card.weeklyChange)}`}>
-            {card.weeklyChange > 0 ? "+" : ""}{formatValue(card.weeklyChange, card.unit)}
+          <div className={`mt-1 font-semibold ${changeTone(weeklyChange)}`}>
+            {weeklyChange > 0 ? "+" : ""}{formatValue(weeklyChange, card.unit)}
           </div>
         </div>
       </div>
