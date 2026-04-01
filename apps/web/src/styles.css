@@ -1999,3 +1999,745 @@ select {
 .admin-banner-error {
   color: #9c3c35;
 }
+
+.allied-page,
+.allied-kpi-grid,
+.allied-chart-grid,
+.allied-insights-grid,
+.allied-issue-list,
+.allied-drawer-grid,
+.allied-detail-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.allied-kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.allied-chart-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+}
+
+.allied-insights-grid {
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+}
+
+.allied-filter-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.allied-filter-grid label,
+.allied-detail-field {
+  display: grid;
+  gap: 6px;
+}
+
+.allied-filter-grid span,
+.allied-detail-field span,
+.allied-issue-meta span {
+  color: #59758a;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+
+.allied-range-row {
+  align-items: stretch;
+}
+
+.allied-range-row input {
+  width: 100%;
+}
+
+.allied-chart {
+  min-height: 260px;
+}
+
+.allied-section-card {
+  overflow: hidden;
+}
+
+.allied-section-header {
+  align-items: start;
+}
+
+.allied-issue-list {
+  grid-template-columns: 1fr;
+}
+
+.allied-issue-card {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #d3e2eb;
+  background: #f9fcfe;
+  display: grid;
+  gap: 8px;
+}
+
+.allied-issue-critical {
+  border-color: #e4b4b0;
+  background: #fff3f1;
+}
+
+.allied-issue-warn {
+  border-color: #e5d0a6;
+  background: #fff8ea;
+}
+
+.allied-issue-card strong {
+  color: #173447;
+}
+
+.allied-issue-card span {
+  color: #4f6b7c;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.allied-issue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.allied-mini-table td,
+.allied-mini-table th,
+.allied-detail-table td,
+.allied-detail-table th {
+  font-size: 12px;
+}
+
+.allied-click-row {
+  cursor: pointer;
+}
+
+.allied-click-row:hover td {
+  background: #f0f7fb;
+}
+
+.allied-detail-selected td {
+  background: #e4f1f8;
+}
+
+.allied-detail-table-wrap {
+  overflow-x: auto;
+}
+
+.allied-pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.allied-drawer-grid {
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  align-items: start;
+}
+
+.allied-detail-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.allied-detail-field {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #d6e4ec;
+  background: #f8fbfd;
+}
+
+.allied-detail-field strong {
+  color: #173447;
+  font-size: 14px;
+}
+
+.allied-check-list {
+  display: grid;
+  gap: 10px;
+}
+
+.price-tables-page,
+.price-tables-layout,
+.price-tables-shell,
+.price-tables-list,
+.price-tables-form-stack,
+.price-tables-preview-stack,
+.price-tables-output-list {
+  display: grid;
+  gap: 14px;
+}
+
+.price-tables-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: end;
+  padding: 22px 24px;
+  border-radius: 24px;
+  border: 1px solid #c9dce8;
+  background:
+    radial-gradient(circle at top left, rgba(114, 173, 204, 0.18), transparent 32%),
+    linear-gradient(180deg, #fafdff 0%, #edf5f9 100%);
+  box-shadow: 0 16px 34px rgba(34, 74, 96, 0.1);
+}
+
+.price-tables-kicker,
+.price-tables-panel-kicker,
+.price-tables-form-grid label span {
+  color: #547286;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+
+.price-tables-hero h1,
+.price-tables-panel-head h3 {
+  margin: 6px 0 0;
+  color: #173447;
+}
+
+.price-tables-hero p {
+  margin: 12px 0 0;
+  max-width: 760px;
+  color: #4f6b7c;
+  line-height: 1.6;
+}
+
+.price-tables-hero-actions {
+  display: grid;
+  gap: 10px;
+  min-width: 240px;
+}
+
+.price-tables-hero-actions label {
+  display: grid;
+  gap: 6px;
+}
+
+.price-tables-banner {
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.price-tables-banner-success {
+  background: #e8f7ee;
+  border: 1px solid #8ac5a2;
+  color: #1d6a3f;
+}
+
+.price-tables-banner-error {
+  background: #fff1f0;
+  border: 1px solid #ebb3b0;
+  color: #9c3c35;
+}
+
+.price-tables-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.price-tables-panel {
+  padding: 18px;
+  border-radius: 20px;
+}
+
+.price-tables-preview-panel {
+  grid-column: 1 / -1;
+}
+
+.price-tables-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: start;
+}
+
+.price-tables-inline-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.price-tables-shell {
+  grid-template-columns: 280px minmax(0, 1fr);
+  margin-top: 16px;
+}
+
+.price-tables-list {
+  align-content: start;
+  max-height: 720px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.price-tables-list-item {
+  width: 100%;
+  text-align: left;
+  border-radius: 14px;
+  padding: 12px 14px;
+  border: 1px solid #d3e2eb;
+  background: #f9fcfe;
+  display: grid;
+  gap: 6px;
+}
+
+.price-tables-list-item strong,
+.price-tables-preview-meta strong,
+.price-tables-output-head strong,
+.price-tables-trace-row strong {
+  color: #173447;
+}
+
+.price-tables-list-item span,
+.price-tables-preview-meta span,
+.price-tables-output-head span,
+.price-tables-trace-row span {
+  color: #567386;
+  font-size: 12px;
+}
+
+.price-tables-list-item-active {
+  background: #e5f1f8;
+  border-color: #8cb7ce;
+  box-shadow: 0 8px 20px rgba(56, 103, 129, 0.08);
+}
+
+.price-tables-form-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.price-tables-form-grid label,
+.price-tables-subsection {
+  display: grid;
+  gap: 6px;
+}
+
+.price-tables-full {
+  grid-column: 1 / -1;
+}
+
+.price-tables-form-grid textarea,
+.price-tables-form-grid input,
+.price-tables-form-grid select {
+  width: 100%;
+}
+
+.price-tables-table-wrap {
+  overflow-x: auto;
+}
+
+.price-tables-table input,
+.price-tables-table select,
+.price-tables-table textarea {
+  width: 100%;
+  min-width: 88px;
+}
+
+.price-tables-table textarea {
+  min-height: 72px;
+}
+
+.price-tables-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.price-tables-button-row,
+.price-tables-segmented,
+.price-tables-run-badges {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.price-tables-detail-picker label {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.price-tables-detail-picker select {
+  width: 100%;
+}
+
+.price-tables-segmented button {
+  background: #f2f8fb;
+  color: #31566d;
+}
+
+.price-tables-segmented-active {
+  background: #173447 !important;
+  color: #f7fbfd !important;
+}
+
+.price-tables-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #cfe0e9;
+  background: #f7fbfd;
+  color: #3f6075;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.price-tables-preview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.price-tables-warning {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #e5d0a6;
+  background: #fff8ea;
+  color: #8a5b08;
+  display: grid;
+  gap: 6px;
+}
+
+.price-tables-output-list {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.price-tables-output-card {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid #d3e2eb;
+  background: #f9fcfe;
+  display: grid;
+  gap: 12px;
+}
+
+.price-tables-output-head,
+.price-tables-output-metrics,
+.price-tables-trace-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: start;
+}
+
+.price-tables-output-metrics {
+  flex-direction: column;
+  gap: 4px;
+  color: #345467;
+  font-size: 13px;
+}
+
+.price-tables-trace {
+  display: grid;
+  gap: 8px;
+}
+
+.price-tables-trace-row {
+  padding-top: 8px;
+  border-top: 1px solid #dce8ef;
+}
+
+.price-tables-trace-row em {
+  color: #173447;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.price-tables-empty {
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px dashed #c7d8e3;
+  background: #f7fbfd;
+  color: #5b778a;
+  text-align: center;
+}
+
+.price-tables-detail-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid #d3e2eb;
+  background: #f9fcfe;
+  color: #496577;
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-prices-page {
+  display: grid;
+  gap: 14px;
+}
+
+.mobile-prices-hero {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-prices-hero h1,
+.mobile-prices-section-head h3 {
+  margin: 0;
+}
+
+.mobile-prices-hero p,
+.mobile-prices-detail span,
+.mobile-prices-customer span,
+.mobile-prices-output-head span {
+  color: #5d788b;
+}
+
+.mobile-prices-controls label,
+.mobile-prices-detail,
+.mobile-prices-kv,
+.mobile-prices-search,
+.mobile-prices-output-card,
+.mobile-prices-history-card,
+.mobile-prices-customer {
+  display: grid;
+  gap: 6px;
+}
+
+.mobile-prices-nav,
+.mobile-prices-customers,
+.mobile-prices-action-bar,
+.mobile-prices-tabbar,
+.mobile-prices-bottom-actions {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scroll-snap-type: x proximity;
+}
+
+.mobile-prices-alert-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-prices-alert-card {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid #e5d0a6;
+  background: linear-gradient(180deg, #fff8ea 0%, #fff2d7 100%);
+  display: grid;
+  gap: 4px;
+  animation: mobilePricesFadeUp 220ms ease;
+}
+
+.mobile-prices-alert-card strong {
+  color: #8a5b08;
+}
+
+.mobile-prices-alert-card span {
+  color: #6f531b;
+}
+
+.mobile-prices-inline-head,
+.mobile-prices-sheet-head,
+.mobile-prices-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mobile-prices-nav button {
+  white-space: nowrap;
+  background: #f2f8fb;
+  color: #31566d;
+  scroll-snap-align: start;
+}
+
+.mobile-prices-nav-active,
+.mobile-prices-customer-active {
+  border-color: #86b2cb !important;
+  background: #e5f1f8 !important;
+  box-shadow: 0 8px 20px rgba(56, 103, 129, 0.08);
+}
+
+.mobile-prices-customer,
+.mobile-prices-history-card {
+  min-width: 220px;
+  text-align: left;
+  scroll-snap-align: start;
+}
+
+.mobile-prices-section,
+.mobile-prices-section-stage,
+.mobile-prices-output-grid,
+.mobile-prices-summary-grid,
+.mobile-prices-source-grid,
+.mobile-prices-trace-list,
+.mobile-prices-sheet-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-prices-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mobile-prices-rule-summary {
+  display: grid;
+  gap: 10px;
+  background: linear-gradient(180deg, #f9fcfe 0%, #edf5f9 100%);
+}
+
+.mobile-prices-summary-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mobile-prices-summary-pills span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #cfe0e9;
+  background: #ffffff;
+  color: #31566d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mobile-prices-output-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.mobile-prices-output-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mobile-prices-source-grid,
+.mobile-prices-sheet-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.mobile-prices-source-card,
+.mobile-prices-trace-row {
+  text-align: left;
+}
+
+.mobile-prices-profile-form {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-prices-profile-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.mobile-prices-search input {
+  width: 100%;
+}
+
+.mobile-prices-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.mobile-prices-bottom-bar {
+  position: sticky;
+  bottom: 12px;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(247, 251, 253, 0.94);
+  border: 1px solid #d2e1ea;
+  box-shadow: 0 10px 28px rgba(23, 52, 71, 0.12);
+  backdrop-filter: blur(8px);
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-prices-tabbar button {
+  flex: 1;
+}
+
+.mobile-prices-bottom-actions button {
+  flex: 1;
+}
+
+.mobile-prices-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 35, 48, 0.48);
+  z-index: 50;
+  display: grid;
+  align-items: end;
+  animation: mobilePricesFadeIn 180ms ease;
+}
+
+.mobile-prices-sheet {
+  background: #f9fcfe;
+  border-radius: 24px 24px 0 0;
+  padding: 16px;
+  max-height: 88vh;
+  overflow: auto;
+  border-top: 1px solid #d2e1ea;
+  animation: mobilePricesSheetUp 220ms ease;
+}
+
+.mobile-prices-sheet-head {
+  margin-bottom: 14px;
+}
+
+.mobile-prices-sheet-head strong {
+  display: block;
+  color: #173447;
+}
+
+.mobile-prices-sheet-head span {
+  color: #5d788b;
+}
+
+.mobile-prices-output-card,
+.mobile-prices-history-card,
+.mobile-prices-source-card,
+.mobile-prices-customer,
+.mobile-prices-detail,
+.mobile-prices-section.card {
+  animation: mobilePricesFadeUp 220ms ease;
+}
+
+@keyframes mobilePricesFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mobilePricesFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mobilePricesSheetUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 1024px) {
+  .allied-insights-grid,
+  .allied-drawer-grid,
+  .price-tables-layout,
+  .price-tables-shell,
+  .price-tables-preview-grid,
+  .mobile-prices-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .price-tables-hero {
+    flex-direction: column;
+    align-items: start;
+  }
+}

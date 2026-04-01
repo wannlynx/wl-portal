@@ -5,6 +5,7 @@ import { PortfolioPage } from "./pages/PortfolioPage";
 import { WorkQueuePage } from "./pages/WorkQueuePage";
 import { TankInformationPage } from "./pages/TankInformationPage";
 import { TankChartsPage } from "./pages/TankChartsPage";
+import { AlliedPage } from "./pages/AlliedPage";
 import { SiteDetailPage } from "./pages/SiteDetailPage";
 import { LayoutPage } from "./pages/LayoutPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
@@ -12,6 +13,8 @@ import { AdminPage } from "./pages/AdminPage";
 import { LoginPage } from "./pages/LoginPage";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { ManagementPage } from "./pages/ManagementPage";
+import { PriceTablesPage } from "./pages/PriceTablesPage";
+import { MobilePricesPage } from "./pages/MobilePricesPage";
 import xpLogo from "./assets/xprotean-logo.svg";
 
 const PricingPage = lazy(() =>
@@ -23,7 +26,10 @@ function AppFrame({ children, user, jobber, onLogout }) {
   const pageTitle =
     location.pathname.startsWith("/sites/") ? "Site Operations" :
     location.pathname.startsWith("/management") ? "Users" :
+    location.pathname.startsWith("/mobile-prices") ? "Mobile Prices" :
+    location.pathname.startsWith("/price-tables") ? "Price Tables" :
     location.pathname.startsWith("/pricing") ? "Pricing" :
+    location.pathname.startsWith("/allied") ? "Allied Transactions" :
     location.pathname.startsWith("/work-queue") ? "Service Work Queue" :
     location.pathname.startsWith("/tank-information") ? "Tank Information" :
     location.pathname.startsWith("/tank-charts") ? "Tank Charts" :
@@ -47,6 +53,9 @@ function AppFrame({ children, user, jobber, onLogout }) {
           <NavLink to="/tank-charts" className={({ isActive }) => (isActive ? "active" : "") }>
             Tank Charts
           </NavLink>
+          <NavLink to="/allied" className={({ isActive }) => (isActive ? "active" : "") }>
+            Allied
+          </NavLink>
           {user?.jobberRole === "admin" || user?.role === "system_manager" ? (
             <NavLink to="/management" className={({ isActive }) => (isActive ? "active" : "") }>
               Users
@@ -54,6 +63,12 @@ function AppFrame({ children, user, jobber, onLogout }) {
           ) : null}
           <NavLink to="/pricing" className={({ isActive }) => (isActive ? "active" : "") }>
             Pricing
+          </NavLink>
+          <NavLink to="/price-tables" className={({ isActive }) => (isActive ? "active" : "") }>
+            Price Tables
+          </NavLink>
+          <NavLink to="/mobile-prices" className={({ isActive }) => (isActive ? "active" : "") }>
+            Mobile Prices
           </NavLink>
           <NavLink to="/admin" className={({ isActive }) => (isActive ? "active" : "") }>
             Admin
@@ -95,6 +110,7 @@ function ProtectedApp({ user, jobber, onLogout, onJobberUpdated }) {
         <Route path="/work-queue" element={<WorkQueuePage />} />
         <Route path="/tank-information" element={<TankInformationPage />} />
         <Route path="/tank-charts" element={<TankChartsPage />} />
+        <Route path="/allied" element={<AlliedPage />} />
         <Route path="/management" element={user?.jobberRole === "admin" || user?.role === "system_manager" ? <ManagementPage /> : <Navigate to="/" replace />} />
         <Route
           path="/pricing"
@@ -104,6 +120,8 @@ function ProtectedApp({ user, jobber, onLogout, onJobberUpdated }) {
             </Suspense>
           }
         />
+        <Route path="/price-tables" element={<PriceTablesPage />} />
+        <Route path="/mobile-prices" element={<MobilePricesPage />} />
         <Route path="/admin" element={<AdminPage user={user} jobber={jobber} onJobberUpdated={onJobberUpdated} />} />
         <Route path="/sites/:siteId" element={<SiteDetailPage />} />
         <Route path="/sites/:siteId/layout" element={<LayoutPage />} />
@@ -119,31 +137,49 @@ export default function App() {
   const [status, setStatus] = useState("loading");
   const [user, setUser] = useState(null);
   const [jobber, setJobber] = useState(null);
+  const [sessionError, setSessionError] = useState("");
 
-  useEffect(() => {
+  async function restoreSession() {
     if (!getToken()) {
+      setSessionError("");
       setStatus("guest");
       return;
     }
 
-    api.getSessionUser()
-      .then(async (sessionUser) => {
-        let sessionJobber = null;
-        try {
-          sessionJobber = await api.getCurrentJobber();
-        } catch (_error) {
-          sessionJobber = null;
-        }
-        setUser(sessionUser);
-        setJobber(sessionJobber);
-        setStatus("ready");
-      })
-      .catch(() => {
+    setStatus("loading");
+    setSessionError("");
+
+    try {
+      const sessionUser = await api.getSessionUser();
+      let sessionJobber = null;
+      try {
+        sessionJobber = await api.getCurrentJobber();
+      } catch (_error) {
+        sessionJobber = null;
+      }
+      setUser(sessionUser);
+      setJobber(sessionJobber);
+      setStatus("ready");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "");
+      if (message.startsWith("401:") || message.startsWith("403:") || message.startsWith("404:")) {
         logout();
         setUser(null);
         setJobber(null);
+        setSessionError("");
         setStatus("guest");
-      });
+        return;
+      }
+
+      setUser(null);
+      setJobber(null);
+      setSessionError(message || "The API is unavailable.");
+      setStatus("api-unavailable");
+    }
+  }
+
+  useEffect(() => {
+    restoreSession();
   }, []);
 
   async function handleAuthenticated(nextUser) {
@@ -155,6 +191,7 @@ export default function App() {
     }
     setUser(nextUser);
     setJobber(nextJobber);
+    setSessionError("");
     setStatus("ready");
   }
 
@@ -162,11 +199,26 @@ export default function App() {
     logout();
     setUser(null);
     setJobber(null);
+    setSessionError("");
     setStatus("guest");
     navigate("/login", { replace: true });
   }
 
   if (status === "loading") return <div className="login-status">Checking local session...</div>;
+  if (status === "api-unavailable") {
+    return (
+      <div className="login-status">
+        <div style={{ textAlign: "center", maxWidth: 520 }}>
+          <div>Stored session found, but the API is unavailable.</div>
+          <div style={{ marginTop: 12, fontWeight: 500, fontSize: 14 }}>{sessionError || "Start the local API and retry."}</div>
+          <div style={{ marginTop: 16, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <button type="button" onClick={restoreSession}>Retry session</button>
+            <button type="button" onClick={handleLogout}>Clear saved session</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Routes>

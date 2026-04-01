@@ -121,7 +121,23 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   getSites: () => request("/sites"),
+  getAlliedPortfolioSummary: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/allied-transactions/portfolio-summary${query ? `?${query}` : ""}`);
+  },
   getSite: (siteId) => request(`/sites/${siteId}`),
+  getAlliedTransactionsSummary: (siteId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/sites/${siteId}/allied-transactions/summary${query ? `?${query}` : ""}`);
+  },
+  getAlliedTransactions: (siteId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/sites/${siteId}/allied-transactions${query ? `?${query}` : ""}`);
+  },
+  getAlliedTransactionsExportUrl: (siteId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return `${API_BASE}/sites/${siteId}/allied-transactions/export${query ? `?${query}` : ""}`;
+  },
   getSitePricingConfigs: (siteId) => request(`/sites/${siteId}/pricing-configs`),
   saveSitePricingConfig: (siteId, payload) =>
     request(`/sites/${siteId}/pricing-configs`, {
@@ -195,9 +211,113 @@ export const api = {
     return request(`/tank-information${query ? `?${query}` : ""}`);
   },
   getPricingSnapshot: () => request("/market/pricing"),
+  getCustomers: () => request("/customers"),
+  createCustomer: (payload) =>
+    request("/customers", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  getCustomer: (customerId) => request(`/customers/${customerId}`),
+  updateCustomer: (customerId, payload) =>
+    request(`/customers/${customerId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  createCustomerContact: (customerId, payload) =>
+    request(`/customers/${customerId}/contacts`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateCustomerContact: (customerId, contactId, payload) =>
+    request(`/customers/${customerId}/contacts/${contactId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  deleteCustomerContact: (customerId, contactId) =>
+    request(`/customers/${customerId}/contacts/${contactId}`, {
+      method: "DELETE"
+    }),
+  getCustomerPricingProfile: (customerId) => request(`/customers/${customerId}/pricing-profile`),
+  saveCustomerPricingProfile: (customerId, payload) =>
+    request(`/customers/${customerId}/pricing-profile`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }),
+  getPricingSources: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/pricing/sources${query ? `?${query}` : ""}`);
+  },
+  createPricingSource: (payload) =>
+    request("/pricing/sources", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  getPricingSource: (sourceId) => request(`/pricing/sources/${sourceId}`),
+  addPricingSourceValues: (sourceId, values) =>
+    request(`/pricing/sources/${sourceId}/values`, {
+      method: "POST",
+      body: JSON.stringify({ values })
+    }),
+  getPricingTaxes: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/pricing/taxes${query ? `?${query}` : ""}`);
+  },
+  savePricingTaxes: (schedules) =>
+    request("/pricing/taxes", {
+      method: "PUT",
+      body: JSON.stringify({ schedules })
+    }),
+  getPricingRules: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/pricing/rules${query ? `?${query}` : ""}`);
+  },
+  createPricingRule: (payload) =>
+    request("/pricing/rules", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  getPricingRule: (ruleId) => request(`/pricing/rules/${ruleId}`),
+  updatePricingRule: (ruleId, payload) =>
+    request(`/pricing/rules/${ruleId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  savePricingRuleComponents: (ruleId, components) =>
+    request(`/pricing/rules/${ruleId}/components`, {
+      method: "PUT",
+      body: JSON.stringify({ components })
+    }),
+  savePricingRuleVendorSets: (ruleId, vendorSets) =>
+    request(`/pricing/rules/${ruleId}/vendor-sets`, {
+      method: "PUT",
+      body: JSON.stringify({ vendorSets })
+    }),
+  previewPricingRun: (payload) =>
+    request("/pricing/runs/preview", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  generatePricingRun: (payload) =>
+    request("/pricing/runs", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  getPricingRunHistory: (pricingDate, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/pricing/runs/${pricingDate}${query ? `?${query}` : ""}`);
+  },
+  getGeneratedPricingOutputs: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/pricing/outputs${query ? `?${query}` : ""}`);
+  },
+  getGeneratedPricingOutput: (outputId) => request(`/pricing/outputs/${outputId}`),
   getOpisSnapshot: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return request(`/market/opis${query ? `?${query}` : ""}`);
+  },
+  getOpisRawSnapshot: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/market/opis/raw${query ? `?${query}` : ""}`);
   },
   ackAlert: (id) => request(`/alerts/${id}/ack`, { method: "POST" })
 };

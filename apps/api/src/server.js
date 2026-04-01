@@ -4,9 +4,35 @@ const cors = require("cors");
 const { authMiddleware, encodeToken } = require("./auth");
 const { requireAuth, requireSiteAccess, requireRole } = require("./rbac");
 const { registerClient, sendEvent, broadcast } = require("./events");
-const { query, initDb, hasDbConfig } = require("./db");
+const { query, tx, initDb, hasDbConfig } = require("./db");
 const { seedIfEmpty } = require("./seed");
 const { encryptJson, decryptJson } = require("./secrets");
+const {
+  createCustomer,
+  createCustomerContact,
+  createPricingSource,
+  createPricingSourceValues,
+  createPricingRule,
+  deleteCustomerContact,
+  getCustomerDetail,
+  getGeneratedCustomerPriceDetail,
+  getLatestCustomerPricingProfile,
+  getPricingSourceDetail,
+  getPricingRuleDetail,
+  listCustomers,
+  listGeneratedCustomerPrices,
+  listPricingRules,
+  listPricingSources,
+  listPricingTaxes,
+  saveCustomerPricingProfile,
+  savePricingRuleComponents,
+  savePricingRuleVendorSets,
+  updatePricingRule,
+  savePricingTaxes,
+  updateCustomerContact,
+  updateCustomer
+} = require("./pricing/repositories");
+const { generateCustomerPricingRun, previewCustomerPricing } = require("./pricing/engine");
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -18,6 +44,140 @@ app.use(authMiddleware);
 
 function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
+const alliedMetricStatusSet = new Set(["Complete", "Approved"]);
+const alliedAbortStatusSet = new Set(["CustomerAbort"]);
+
+function toNumber(value, fallback = null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeDateParam(value, fallback) {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+}
+
+function alliedDefaultDateRange() {
+  const end = new Date();
+  const start = new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000);
+  return {
+    start: start.toISOString(),
+    end: end.toISOString()
+  };
+}
+
+function alliedTextCsv(value) {
+  const normalized = value == null ? "" : String(value);
+  return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, "\"\"")}"` : normalized;
+}
+
+function alliedMaskedPan(first8, last4) {
+  const head = String(first8 || "").trim();
+  const tail = String(last4 || "").trim();
+  if (!head && !tail) return "-";
+  return `${head || "--------"}******${tail || "----"}`;
+}
+
+function alliedQuickPresetRange(preset) {
+  const end = new Date();
+  if (preset === "today") {
+    const start = new Date(end);
+    start.setHours(0, 0, 0, 0);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+  if (preset === "7d") {
+    return { start: new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString(), end: end.toISOString() };
+  }
+  if (preset === "30d") {
+    return { start: new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000).toISOString(), end: end.toISOString() };
+  }
+  return null;
+}
+
+function alliedNormalizeSort(sortBy, sortDir) {
+  const allowed = new Set([
+    "timestamp",
+    "transaction_id",
+    "fuel_position_id",
+    "payment_type",
+    "card_name",
+    "card_type",
+    "entry_method",
+    "emv_tran_type",
+    "emv_status",
+    "emv_error_code",
+    "tag_denial_reason",
+    "fuel_quantity_gallons",
+    "actual_sales_price",
+    "total_amount",
+    "auth_amount"
+  ]);
+  const key = allowed.has(sortBy) ? sortBy : "timestamp";
+  const direction = String(sortDir || "").toLowerCase() === "asc" ? "ASC" : "DESC";
+  return { key, direction };
+}
+
+function alliedLikelyTransactionType(row) {
+  if (row.paymentType === "Preset") return "Preset Cash";
+  if (row.entryMethod === "EmvContactless") return "Contactless Fuel";
+  if (row.emvTranType === "PreAuth") return "Pre-Authorization";
+  if (row.emvStatus === "CustomerAbort") return "Customer Abort";
+  if (row.fallbackToMsr) return "Fallback Swipe";
+  return "Card Fuel Sale";
+}
+
+function alliedDerivedChecks(row) {
+  const total = toNumber(row.totalAmount, 0) || 0;
+  const gallons = toNumber(row.fuelQuantityGallons, 0) || 0;
+  const auth = toNumber(row.authAmount, 0);
+  const authSaleDifference = auth == null ? null : Number((auth - total).toFixed(2));
+  const checks = [];
+
+  if (alliedMetricStatusSet.has(row.emvStatus) && total <= 0) checks.push("Complete transaction has non-positive total amount.");
+  if (alliedMetricStatusSet.has(row.emvStatus) && gallons <= 0) checks.push("Complete fuel sale has non-positive gallons.");
+  if (alliedAbortStatusSet.has(row.emvStatus) && (total > 0 || gallons > 0)) checks.push("Customer abort has positive dollars or gallons.");
+  if (auth != null && auth < total) checks.push("Authorized amount is below captured sale amount.");
+  if (alliedMetricStatusSet.has(row.emvStatus) && !row.fuelPositionId) checks.push("Completed fuel sale is missing fuel position.");
+  if (row.first8 && !/^\d{8}$/.test(row.first8)) checks.push("PAN first8 is malformed.");
+  if (row.last4 && !/^\d{4}$/.test(row.last4)) checks.push("PAN last4 is malformed.");
+  if (row.expDate && !/^\d{2}\/\d{2}$/.test(row.expDate)) checks.push("Expiry format is malformed.");
+  if (row.paymentType === "Preset" && row.cardName && row.cardName !== "Cash") checks.push("Preset cash transaction carries a non-cash card label.");
+
+  return {
+    authSaleDifference,
+    internallyConsistent: checks.length === 0,
+    checks
+  };
+}
+
+function alliedBuildIssue(title, severity, reason, rows, extra = {}) {
+  const relatedPumps = [...new Set(rows.map((row) => row.fuelPositionId).filter(Boolean))].slice(0, 5);
+  const timestamps = rows.map((row) => new Date(row.timestamp).getTime()).filter(Number.isFinite).sort((a, b) => a - b);
+  return {
+    id: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${severity}`,
+    title,
+    severity,
+    reason,
+    relatedPumps,
+    relatedTimePeriod: timestamps.length ? {
+      start: new Date(timestamps[0]).toISOString(),
+      end: new Date(timestamps[timestamps.length - 1]).toISOString()
+    } : null,
+    count: rows.length,
+    rateImpact: extra.rateImpact ?? null,
+    filters: extra.filters || {},
+    examples: rows.slice(0, 6).map((row) => ({
+      transactionId: row.transactionId,
+      timestamp: row.timestamp,
+      fuelPositionId: row.fuelPositionId,
+      emvStatus: row.emvStatus,
+      emvErrorCode: row.emvErrorCode,
+      tagDenialReason: row.tagDenialReason
+    }))
+  };
 }
 
 const EIA_API_BASE_URL = "https://api.eia.gov/v2/seriesid";
@@ -72,11 +232,8 @@ function normalizeEiaApiKey(rawValue) {
 
 async function eiaApiKey(user) {
   const envApiKey = normalizeEiaApiKey(process.env.EIA_API_KEY || "");
-  if (envApiKey) {
-    return envApiKey;
-  }
   if (!user?.jobberId) {
-    return "";
+    return envApiKey;
   }
 
   const result = await query(
@@ -86,11 +243,21 @@ async function eiaApiKey(user) {
      LIMIT 1`,
     [user.jobberId]
   );
-  if (result.rowCount === 0) {
-    return "";
+  if (result.rowCount > 0) {
+    try {
+      const decrypted = decryptJson(result.rows[0].encryptedJson || {});
+      const storedApiKey = normalizeEiaApiKey(decrypted.apiKey || "");
+      if (storedApiKey) {
+        return storedApiKey;
+      }
+    } catch (error) {
+      if (envApiKey) {
+        return envApiKey;
+      }
+      throw new Error("Saved EIA credentials could not be decrypted with the current app secret. Re-save the EIA key in Admin.");
+    }
   }
-  const decrypted = decryptJson(result.rows[0].encryptedJson || {});
-  return normalizeEiaApiKey(decrypted.apiKey || "");
+  return envApiKey;
 }
 
 async function hasEiaApiKey(user) {
@@ -271,9 +438,6 @@ async function opisCredentials(user) {
     username: process.env.OPIS_USERNAME || "",
     password: process.env.OPIS_PASSWORD || ""
   };
-  if (envCredentials.username && envCredentials.password) {
-    return envCredentials;
-  }
   if (!user?.jobberId) {
     return envCredentials;
   }
@@ -285,15 +449,22 @@ async function opisCredentials(user) {
      LIMIT 1`,
     [user.jobberId]
   );
-  if (result.rowCount === 0) {
-    return envCredentials;
+  if (result.rowCount > 0) {
+    try {
+      const decrypted = decryptJson(result.rows[0].encryptedJson || {});
+      const username = String(decrypted.username || "");
+      const password = String(decrypted.password || "");
+      if (username && password) {
+        return { username, password };
+      }
+    } catch (error) {
+      if (envCredentials.username && envCredentials.password) {
+        return envCredentials;
+      }
+      throw new Error("Saved OPIS credentials could not be decrypted with the current app secret. Re-save the OPIS credentials in Admin.");
+    }
   }
-
-  const decrypted = decryptJson(result.rows[0].encryptedJson || {});
-  return {
-    username: String(decrypted.username || ""),
-    password: String(decrypted.password || "")
-  };
+  return envCredentials;
 }
 
 async function hasOpisCredentials(user) {
@@ -321,13 +492,16 @@ async function opisAuthenticate(user) {
   }
 
   const payload = await response.json();
-  if (payload?.StatusCode !== 200 || !payload?.Data) {
-    throw new Error(payload?.ErrorMessage || "OPIS auth did not return a bearer token");
+  const statusCode = Number(payload?.StatusCode ?? payload?.statusCode ?? 0);
+  const token = payload?.Data ?? payload?.data ?? "";
+  const errorMessage = payload?.ErrorMessage ?? payload?.errorMessage;
+  if (statusCode !== 200 || !token) {
+    throw new Error(errorMessage || "OPIS auth did not return a bearer token");
   }
-  return payload.Data;
+  return token;
 }
 
-async function opisRequest(path, token, queryParams = {}) {
+async function opisRequestRaw(path, token, queryParams = {}) {
   const url = new URL(`${OPIS_API_BASE_URL}/${path}`);
   for (const [key, value] of Object.entries(queryParams)) {
     if (value == null || value === "") continue;
@@ -345,9 +519,15 @@ async function opisRequest(path, token, queryParams = {}) {
     throw new Error(`OPIS request failed (${response.status}) for ${path}`);
   }
 
-  const payload = await response.json();
-  if (payload?.StatusCode !== 200) {
-    throw new Error(payload?.ErrorMessage || `OPIS request failed for ${path}`);
+  return response.json();
+}
+
+async function opisRequest(path, token, queryParams = {}) {
+  const payload = await opisRequestRaw(path, token, queryParams);
+  const statusCode = Number(payload?.StatusCode ?? payload?.statusCode ?? 0);
+  const errorMessage = payload?.ErrorMessage ?? payload?.errorMessage;
+  if (statusCode !== 200) {
+    throw new Error(errorMessage || `OPIS request failed for ${path}`);
   }
   return payload;
 }
@@ -689,6 +869,120 @@ function appendParams(target, params, hash = false) {
   return url.toString();
 }
 
+function pricingText(value, fallback = "") {
+  return String(value == null ? fallback : value).trim();
+}
+
+function pricingNullableDate(value) {
+  if (value == null || value === "") return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function customerRow(row) {
+  return {
+    id: row.id,
+    jobberId: row.jobberId,
+    name: row.name,
+    addressLine1: row.addressLine1,
+    addressLine2: row.addressLine2,
+    city: row.city,
+    state: row.state,
+    postalCode: row.postalCode,
+    terminalKey: row.terminalKey,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+function customerContactRow(row) {
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    faxEmail: row.faxEmail,
+    isPrimary: row.isPrimary,
+    deliveryMethod: row.deliveryMethod,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+function customerPricingProfileRow(row) {
+  return {
+    id: row.id,
+    customerId: row.customerId,
+    effectiveStart: row.effectiveStart,
+    effectiveEnd: row.effectiveEnd,
+    freightMiles: row.freightMiles,
+    freightCostGas: row.freightCostGas,
+    freightCostDiesel: row.freightCostDiesel,
+    rackMarginGas: row.rackMarginGas,
+    rackMarginDiesel: row.rackMarginDiesel,
+    discountRegular: row.discountRegular,
+    discountMid: row.discountMid,
+    discountPremium: row.discountPremium,
+    discountDiesel: row.discountDiesel,
+    outputTemplateId: row.outputTemplateId,
+    rules: row.rules || {},
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+
+function pricingSourceSnapshotRow(row) {
+  return {
+    id: row.id,
+    jobberId: row.jobberId,
+    pricingDate: row.pricingDate,
+    sourceType: row.sourceType,
+    sourceLabel: row.sourceLabel,
+    status: row.status,
+    receivedAt: row.receivedAt,
+    createdAt: row.createdAt,
+    createdBy: row.createdBy,
+    notes: row.notes
+  };
+}
+
+function pricingSourceValueRow(row) {
+  return {
+    id: row.id,
+    snapshotId: row.snapshotId,
+    marketKey: row.marketKey,
+    terminalKey: row.terminalKey,
+    productKey: row.productKey,
+    vendorKey: row.vendorKey,
+    quoteCode: row.quoteCode,
+    value: row.value,
+    unit: row.unit,
+    effectiveDate: row.effectiveDate,
+    metadata: row.metadata || {},
+    createdAt: row.createdAt
+  };
+}
+
+function pricingTaxScheduleRow(row) {
+  return {
+    id: row.id,
+    jobberId: row.jobberId,
+    productFamily: row.productFamily,
+    taxName: row.taxName,
+    value: row.value,
+    unit: row.unit,
+    effectiveStart: row.effectiveStart,
+    effectiveEnd: row.effectiveEnd,
+    createdAt: row.createdAt,
+    createdBy: row.createdBy
+  };
+}
+
 function redirectWithError(res, redirectTo, error) {
   res.redirect(appendParams(redirectTo || `${webBaseUrl}/auth/callback`, { error }, true));
 }
@@ -995,6 +1289,479 @@ async function ensureSitePermission(user, siteId) {
   return ids.includes(siteId);
 }
 
+async function alliedFilterOptionsForSite(siteId) {
+  const result = await query(
+    `SELECT
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT fuel_position_id), '') AS "fuelPositions",
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT payment_type), '') AS "paymentTypes",
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT card_type), '') AS "cardTypes",
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT card_name), '') AS "cardNames",
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT emv_status), '') AS "emvStatuses",
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT entry_method), '') AS "entryMethods",
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT emv_tran_type), '') AS "emvTranTypes",
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT tag_denial_reason), '') AS "denialReasons"
+     FROM allied_transactions
+     WHERE store_id=$1`,
+    [siteId]
+  );
+  return result.rows[0] || {
+    fuelPositions: [],
+    paymentTypes: [],
+    cardTypes: [],
+    cardNames: [],
+    emvStatuses: [],
+    entryMethods: [],
+    emvTranTypes: [],
+    denialReasons: []
+  };
+}
+
+function alliedFilterSql(queryParams, siteId) {
+  const presetRange = alliedQuickPresetRange(queryParams.preset);
+  const defaults = alliedDefaultDateRange();
+  const dateStart = normalizeDateParam(queryParams.from || presetRange?.start, defaults.start);
+  const dateEnd = normalizeDateParam(queryParams.to || presetRange?.end, defaults.end);
+  const conditions = ["store_id = $1", "\"timestamp\" >= $2", "\"timestamp\" <= $3"];
+  const params = [siteId, dateStart, dateEnd];
+  let index = 4;
+
+  const addTextFilter = (column, value) => {
+    if (!value) return;
+    conditions.push(`${column} = $${index++}`);
+    params.push(value);
+  };
+
+  addTextFilter("fuel_position_id", queryParams.fuelPositionId || queryParams.pumpId);
+  addTextFilter("payment_type", queryParams.paymentType);
+  addTextFilter("card_type", queryParams.cardType);
+  addTextFilter("card_name", queryParams.cardName || queryParams.cardBrand);
+  addTextFilter("emv_status", queryParams.emvStatus);
+  addTextFilter("entry_method", queryParams.entryMethod);
+  addTextFilter("emv_tran_type", queryParams.emvTranType);
+  addTextFilter("tag_denial_reason", queryParams.denialReason);
+
+  const amountMin = toNumber(queryParams.amountMin);
+  const amountMax = toNumber(queryParams.amountMax);
+  const gallonsMin = toNumber(queryParams.gallonsMin);
+  const gallonsMax = toNumber(queryParams.gallonsMax);
+  if (amountMin != null) {
+    conditions.push(`COALESCE(total_amount, 0) >= $${index++}`);
+    params.push(amountMin);
+  }
+  if (amountMax != null) {
+    conditions.push(`COALESCE(total_amount, 0) <= $${index++}`);
+    params.push(amountMax);
+  }
+  if (gallonsMin != null) {
+    conditions.push(`COALESCE(fuel_quantity_gallons, 0) >= $${index++}`);
+    params.push(gallonsMin);
+  }
+  if (gallonsMax != null) {
+    conditions.push(`COALESCE(fuel_quantity_gallons, 0) <= $${index++}`);
+    params.push(gallonsMax);
+  }
+
+  return {
+    whereClause: conditions.join(" AND "),
+    params,
+    range: { from: dateStart, to: dateEnd }
+  };
+}
+
+function alliedPortfolioFilterSql(queryParams, siteIds) {
+  const presetRange = alliedQuickPresetRange(queryParams.preset);
+  const defaults = alliedDefaultDateRange();
+  const dateStart = normalizeDateParam(queryParams.from || presetRange?.start, defaults.start);
+  const dateEnd = normalizeDateParam(queryParams.to || presetRange?.end, defaults.end);
+  const conditions = ["store_id = ANY($1::text[])", "\"timestamp\" >= $2", "\"timestamp\" <= $3"];
+  const params = [siteIds, dateStart, dateEnd];
+  let index = 4;
+
+  if (queryParams.siteId) {
+    conditions.push(`store_id = $${index++}`);
+    params.push(queryParams.siteId);
+  }
+
+  const addTextFilter = (column, value) => {
+    if (!value) return;
+    conditions.push(`${column} = $${index++}`);
+    params.push(value);
+  };
+
+  addTextFilter("fuel_position_id", queryParams.fuelPositionId || queryParams.pumpId);
+  addTextFilter("payment_type", queryParams.paymentType);
+  addTextFilter("card_type", queryParams.cardType);
+  addTextFilter("card_name", queryParams.cardName || queryParams.cardBrand);
+  addTextFilter("emv_status", queryParams.emvStatus);
+  addTextFilter("entry_method", queryParams.entryMethod);
+  addTextFilter("emv_tran_type", queryParams.emvTranType);
+  addTextFilter("tag_denial_reason", queryParams.denialReason);
+
+  const amountMin = toNumber(queryParams.amountMin);
+  const amountMax = toNumber(queryParams.amountMax);
+  if (amountMin != null) {
+    conditions.push(`COALESCE(total_amount, 0) >= $${index++}`);
+    params.push(amountMin);
+  }
+  if (amountMax != null) {
+    conditions.push(`COALESCE(total_amount, 0) <= $${index++}`);
+    params.push(amountMax);
+  }
+
+  return {
+    whereClause: conditions.join(" AND "),
+    params,
+    range: { from: dateStart, to: dateEnd }
+  };
+}
+
+function alliedRowFromDb(row) {
+  const normalized = {
+    id: row.id || `${row.storeId || row.siteId}:${row.transactionId}`,
+    siteId: row.siteId,
+    transactionId: row.transactionId,
+    accountOrigin: row.accountOrigin,
+    actualSalesPrice: toNumber(row.actualSalesPrice, 0),
+    authAmount: toNumber(row.authAmount, null),
+    cardName: row.cardName || "",
+    cardType: row.cardType || "",
+    emvErrorCode: row.emvErrorCode || "",
+    emvStatus: row.emvStatus || "",
+    emvTranType: row.emvTranType || "",
+    entryMethod: row.entryMethod || "",
+    expDate: row.expDate || "",
+    fallbackToMsr: !!row.fallbackToMsr,
+    first8: row.first8 || "",
+    fuelDescription: row.fuelDescription || "",
+    fuelPositionId: row.fuelPositionId || "",
+    fuelQuantityGallons: toNumber(row.fuelQuantityGallons, 0),
+    last4: row.last4 || "",
+    paymentType: row.paymentType || "",
+    storeId: row.storeId || "",
+    tagDenialReason: row.tagDenialReason || "",
+    timestamp: row.timestamp,
+    timezone: row.timezone || "America/New_York",
+    totalAmount: toNumber(row.totalAmount, 0)
+  };
+  const derived = alliedDerivedChecks(normalized);
+  return {
+    ...normalized,
+    maskedPan: alliedMaskedPan(normalized.first8, normalized.last4),
+    likelyTransactionType: alliedLikelyTransactionType(normalized),
+    flagged: !derived.internallyConsistent,
+    derivedChecks: derived
+  };
+}
+
+function alliedSeriesByDay(rows) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const key = String(row.timestamp).slice(0, 10);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        date: key,
+        transactions: 0,
+        sales: 0,
+        gallons: 0,
+        completed: 0,
+        aborts: 0,
+        contactless: 0,
+        chip: 0,
+        preset: 0,
+        issues: 0
+      });
+    }
+    const bucket = grouped.get(key);
+    bucket.transactions += 1;
+    bucket.sales += toNumber(row.totalAmount, 0) || 0;
+    bucket.gallons += toNumber(row.fuelQuantityGallons, 0) || 0;
+    if (alliedMetricStatusSet.has(row.emvStatus)) bucket.completed += 1;
+    if (alliedAbortStatusSet.has(row.emvStatus)) bucket.aborts += 1;
+    if (row.entryMethod === "EmvContactless") bucket.contactless += 1;
+    if (String(row.entryMethod).includes("Chip") || String(row.entryMethod).includes("Emv")) bucket.chip += 1;
+    if (row.paymentType === "Preset") bucket.preset += 1;
+    if (row.flagged) bucket.issues += 1;
+  }
+  return [...grouped.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((bucket) => ({
+      ...bucket,
+      sales: Number(bucket.sales.toFixed(2)),
+      gallons: Number(bucket.gallons.toFixed(3)),
+      completionRate: bucket.transactions ? Number((bucket.completed / bucket.transactions).toFixed(4)) : 0,
+      abortRate: bucket.transactions ? Number((bucket.aborts / bucket.transactions).toFixed(4)) : 0,
+      issueRate: bucket.transactions ? Number((bucket.issues / bucket.transactions).toFixed(4)) : 0,
+      contactlessRate: bucket.transactions ? Number((bucket.contactless / bucket.transactions).toFixed(4)) : 0,
+      chipRate: bucket.transactions ? Number((bucket.chip / bucket.transactions).toFixed(4)) : 0,
+      averageTicket: bucket.completed ? Number((bucket.sales / bucket.completed).toFixed(2)) : 0
+    }));
+}
+
+function alliedDistribution(rows, key) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const label = String(row[key] || "Unknown").trim() || "Unknown";
+    if (!grouped.has(label)) grouped.set(label, { label, count: 0, sales: 0, gallons: 0 });
+    const bucket = grouped.get(label);
+    bucket.count += 1;
+    bucket.sales += toNumber(row.totalAmount, 0) || 0;
+    bucket.gallons += toNumber(row.fuelQuantityGallons, 0) || 0;
+  }
+  return [...grouped.values()]
+    .map((bucket) => ({
+      ...bucket,
+      sales: Number(bucket.sales.toFixed(2)),
+      gallons: Number(bucket.gallons.toFixed(3))
+    }))
+    .sort((a, b) => b.count - a.count || b.sales - a.sales);
+}
+
+function alliedPumpHealth(rows) {
+  return alliedDistribution(rows, "fuelPositionId")
+    .filter((bucket) => bucket.label !== "Unknown")
+    .map((bucket) => {
+      const pumpRows = rows.filter((row) => row.fuelPositionId === bucket.label);
+      const aborts = pumpRows.filter((row) => alliedAbortStatusSet.has(row.emvStatus)).length;
+      const completes = pumpRows.filter((row) => alliedMetricStatusSet.has(row.emvStatus)).length;
+      return {
+        fuelPositionId: bucket.label,
+        transactions: bucket.count,
+        aborts,
+        completionRate: bucket.count ? Number((completes / bucket.count).toFixed(4)) : 0,
+        sales: bucket.sales,
+        gallons: bucket.gallons,
+        flaggedCount: pumpRows.filter((row) => row.flagged).length
+      };
+    })
+    .sort((a, b) => b.gallons - a.gallons || b.transactions - a.transactions);
+}
+
+function alliedCompareWindows(series, accessor) {
+  if (series.length < 2) return null;
+  const trailing = series.slice(-7);
+  const prior = series.slice(-14, -7);
+  if (!prior.length) return null;
+  const currentValue = trailing.reduce((sum, item) => sum + accessor(item), 0);
+  const priorValue = prior.reduce((sum, item) => sum + accessor(item), 0);
+  const delta = currentValue - priorValue;
+  const deltaPct = priorValue === 0 ? null : Number((delta / priorValue).toFixed(4));
+  return { currentValue, priorValue, delta, deltaPct };
+}
+
+function alliedIssues(rows, series) {
+  const issues = [];
+  const highAbortRows = rows.filter((row) => alliedAbortStatusSet.has(row.emvStatus));
+  const highAbortRate = rows.length ? highAbortRows.length / rows.length : 0;
+  if (highAbortRate >= 0.12 && highAbortRows.length >= 5) {
+    issues.push(alliedBuildIssue(
+      "High abort rate",
+      highAbortRate >= 0.2 ? "critical" : "warn",
+      `Abort rate is ${(highAbortRate * 100).toFixed(1)}% in the current filter.`,
+      highAbortRows,
+      { rateImpact: Number(highAbortRate.toFixed(4)), filters: { emvStatus: "CustomerAbort" } }
+    ));
+  }
+
+  const abortCompare = alliedCompareWindows(series, (item) => item.aborts);
+  if (abortCompare && abortCompare.delta > 4 && (abortCompare.deltaPct || 0) >= 0.25) {
+    issues.push(alliedBuildIssue(
+      "Rising abort rate week over week",
+      abortCompare.deltaPct >= 0.6 ? "critical" : "warn",
+      `Aborts increased by ${abortCompare.delta} versus the prior 7-day window.`,
+      highAbortRows.slice(-Math.max(6, abortCompare.delta)),
+      { rateImpact: abortCompare.deltaPct, filters: { emvStatus: "CustomerAbort", preset: "7d" } }
+    ));
+  }
+
+  const zeroDollarRows = rows.filter((row) => alliedMetricStatusSet.has(row.emvStatus) && (toNumber(row.totalAmount, 0) || 0) <= 0);
+  if (zeroDollarRows.length >= 3) {
+    issues.push(alliedBuildIssue(
+      "Abnormal zero-dollar completed transactions",
+      "critical",
+      `${zeroDollarRows.length} completed transactions have non-positive totals.`,
+      zeroDollarRows,
+      { filters: { minFlaggedOnly: "true" } }
+    ));
+  }
+
+  const pumpBuckets = alliedPumpHealth(rows);
+  if (pumpBuckets.length) {
+    const worstPump = [...pumpBuckets].sort((a, b) => b.aborts - a.aborts || a.completionRate - b.completionRate)[0];
+    if (worstPump && worstPump.aborts >= 4 && worstPump.transactions ? worstPump.aborts / worstPump.transactions >= 0.25 : false) {
+      issues.push(alliedBuildIssue(
+        "Pump-specific issue concentration",
+        worstPump.aborts >= 8 ? "critical" : "warn",
+        `${worstPump.fuelPositionId} accounts for ${worstPump.aborts} aborts with ${(worstPump.completionRate * 100).toFixed(1)}% completion.`,
+        rows.filter((row) => row.fuelPositionId === worstPump.fuelPositionId),
+        { filters: { fuelPositionId: worstPump.fuelPositionId } }
+      ));
+    }
+  }
+
+  const emvSpikeBuckets = alliedDistribution(rows.filter((row) => row.emvErrorCode), "emvErrorCode");
+  if (emvSpikeBuckets[0] && emvSpikeBuckets[0].count >= 5) {
+    issues.push(alliedBuildIssue(
+      "Unusual EMV error code spike",
+      emvSpikeBuckets[0].count >= 10 ? "critical" : "warn",
+      `${emvSpikeBuckets[0].label} appeared ${emvSpikeBuckets[0].count} times in the current range.`,
+      rows.filter((row) => row.emvErrorCode === emvSpikeBuckets[0].label),
+      { filters: { emvStatus: "Declined" } }
+    ));
+  }
+
+  const authMismatchRows = rows.filter((row) => row.authAmount != null && row.authAmount < row.totalAmount);
+  if (authMismatchRows.length >= 3) {
+    issues.push(alliedBuildIssue(
+      "Suspicious auth-to-sale mismatches",
+      "critical",
+      `${authMismatchRows.length} records have auth amounts below final total amount.`,
+      authMismatchRows,
+      { filters: { minFlaggedOnly: "true" } }
+    ));
+  }
+
+  const repeatAbortPumps = pumpBuckets.filter((pump) => pump.aborts >= 3);
+  if (repeatAbortPumps[0]) {
+    issues.push(alliedBuildIssue(
+      "Repeated customer aborts on the same pump",
+      repeatAbortPumps[0].aborts >= 6 ? "critical" : "warn",
+      `${repeatAbortPumps[0].fuelPositionId} shows repeated customer aborts.`,
+      rows.filter((row) => row.fuelPositionId === repeatAbortPumps[0].fuelPositionId && alliedAbortStatusSet.has(row.emvStatus)),
+      { filters: { fuelPositionId: repeatAbortPumps[0].fuelPositionId, emvStatus: "CustomerAbort" } }
+    ));
+  }
+
+  const fallbackRows = rows.filter((row) => row.fallbackToMsr || String(row.entryMethod).toLowerCase().includes("fallback"));
+  if (fallbackRows.length >= 4) {
+    issues.push(alliedBuildIssue(
+      "Fallback spike",
+      fallbackRows.length >= 8 ? "critical" : "warn",
+      `${fallbackRows.length} fallback transactions were detected.`,
+      fallbackRows,
+      { filters: { entryMethod: "FallbackMSR" } }
+    ));
+  }
+
+  const outlierRows = rows.filter((row) => (toNumber(row.fuelQuantityGallons, 0) || 0) > 35 || (toNumber(row.totalAmount, 0) || 0) > 175);
+  if (outlierRows.length >= 3) {
+    issues.push(alliedBuildIssue(
+      "Outlier gallons or dollar amounts",
+      "warn",
+      `${outlierRows.length} transactions are outside expected gallons or dollar ranges.`,
+      outlierRows,
+      { filters: { amountMin: "150" } }
+    ));
+  }
+
+  const malformedRows = rows.filter((row) => !row.derivedChecks.internallyConsistent);
+  if (malformedRows.length >= 3) {
+    issues.push(alliedBuildIssue(
+      "Missing or malformed fields",
+      "critical",
+      `${malformedRows.length} transactions failed validation checks.`,
+      malformedRows,
+      { filters: { minFlaggedOnly: "true" } }
+    ));
+  }
+
+  return issues.slice(0, 10);
+}
+
+async function alliedRowsForFilters(siteId, queryParams) {
+  const { whereClause, params, range } = alliedFilterSql(queryParams, siteId);
+  const flaggedOnly = queryParams.minFlaggedOnly === "true";
+  const flaggedClause = flaggedOnly
+    ? ` AND (
+        (emv_status IN ('Complete','Approved') AND COALESCE(total_amount, 0) <= 0)
+        OR (emv_status IN ('Complete','Approved') AND COALESCE(fuel_quantity_gallons, 0) <= 0)
+        OR (emv_status = 'CustomerAbort' AND (COALESCE(total_amount, 0) > 0 OR COALESCE(fuel_quantity_gallons, 0) > 0))
+        OR (auth_amount IS NOT NULL AND total_amount IS NOT NULL AND auth_amount < total_amount)
+        OR (emv_status IN ('Complete','Approved') AND COALESCE(fuel_position_id, '') = '')
+        OR (COALESCE(first8, '') <> '' AND first8 !~ '^[0-9]{8}$')
+        OR (COALESCE(last4, '') <> '' AND last4 !~ '^[0-9]{4}$')
+        OR (COALESCE(exp_date, '') <> '' AND exp_date !~ '^[0-9]{2}/[0-9]{2}$')
+      )`
+    : "";
+  const result = await query(
+    `SELECT
+      store_id || ':' || transaction_id AS id,
+      store_id AS "siteId",
+      transaction_id AS "transactionId",
+      account_origin AS "accountOrigin",
+      actual_sales_price AS "actualSalesPrice",
+      auth_amount AS "authAmount",
+      card_name AS "cardName",
+      card_type AS "cardType",
+      emv_error_code AS "emvErrorCode",
+      emv_status AS "emvStatus",
+      emv_tran_type AS "emvTranType",
+      entry_method AS "entryMethod",
+      exp_date AS "expDate",
+      fallback_to_msr AS "fallbackToMsr",
+      first8,
+      fuel_description AS "fuelDescription",
+      fuel_position_id AS "fuelPositionId",
+      fuel_quantity_gallons AS "fuelQuantityGallons",
+      last4,
+      payment_type AS "paymentType",
+      store_id AS "storeId",
+      tag_denial_reason AS "tagDenialReason",
+      "timestamp",
+      timezone,
+      total_amount AS "totalAmount"
+     FROM allied_transactions
+     WHERE ${whereClause}${flaggedClause}
+     ORDER BY "timestamp" DESC
+     LIMIT 5000`,
+    params
+  );
+  return {
+    rows: result.rows.map(alliedRowFromDb),
+    range
+  };
+}
+
+async function alliedRowsForVisibleSites(siteIds, queryParams) {
+  const { whereClause, params, range } = alliedPortfolioFilterSql(queryParams, siteIds);
+  const result = await query(
+    `SELECT
+      store_id || ':' || transaction_id AS id,
+      store_id AS "siteId",
+      transaction_id AS "transactionId",
+      account_origin AS "accountOrigin",
+      actual_sales_price AS "actualSalesPrice",
+      auth_amount AS "authAmount",
+      card_name AS "cardName",
+      card_type AS "cardType",
+      emv_error_code AS "emvErrorCode",
+      emv_status AS "emvStatus",
+      emv_tran_type AS "emvTranType",
+      entry_method AS "entryMethod",
+      exp_date AS "expDate",
+      fallback_to_msr AS "fallbackToMsr",
+      first8,
+      fuel_description AS "fuelDescription",
+      fuel_position_id AS "fuelPositionId",
+      fuel_quantity_gallons AS "fuelQuantityGallons",
+      last4,
+      payment_type AS "paymentType",
+      store_id AS "storeId",
+      tag_denial_reason AS "tagDenialReason",
+      "timestamp",
+      timezone,
+      total_amount AS "totalAmount"
+     FROM allied_transactions
+     WHERE ${whereClause}
+     ORDER BY "timestamp" DESC
+     LIMIT 20000`,
+    params
+  );
+  return {
+    rows: result.rows.map(alliedRowFromDb),
+    range
+  };
+}
+
 async function hydrateUserWithSites(userId) {
   const userResult = await query(
     `SELECT
@@ -1222,6 +1989,51 @@ app.get(
       user: req.user
     });
     res.json(snapshot);
+  })
+);
+
+app.get(
+  "/market/opis/raw",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (!(await hasOpisCredentials(req.user))) {
+      return res.status(503).json({
+        error: "OPIS credentials are missing. Set OPIS_USERNAME and OPIS_PASSWORD."
+      });
+    }
+
+    const token = await opisAuthenticate(req.user);
+    const timing = String(req.query.timing || "0");
+    const requestedState = String(req.query.state || "ALL") === "ALL" ? "" : String(req.query.state || "ALL");
+    const fuelTypes = OPIS_FUEL_TYPE_OPTIONS.find((option) => option.value === String(req.query.fuelType || "all"))?.opisValue || "";
+    const [supplierPricesPayload, summariesPayload] = await Promise.all([
+      opisRequestRaw("SupplierPrices", token, {
+        timing,
+        State: requestedState,
+        FuelTypes: fuelTypes,
+        priceType: "2",
+        reportType: "1"
+      }),
+      opisRequestRaw("Summary", token, {
+        timing,
+        State: requestedState,
+        FuelTypes: fuelTypes,
+        priceType: "2",
+        reportType: "1"
+      }).catch(() => null)
+    ]);
+
+    res.json({
+      ...(supplierPricesPayload || {}),
+      data: {
+        ...(supplierPricesPayload?.data || supplierPricesPayload?.Data || {}),
+        summaries: summariesPayload?.data?.summaries ?? summariesPayload?.data?.Summaries ?? summariesPayload?.Data?.summaries ?? summariesPayload?.Data?.Summaries ?? []
+      },
+      Data: {
+        ...(supplierPricesPayload?.Data || supplierPricesPayload?.data || {}),
+        Summaries: summariesPayload?.Data?.Summaries ?? summariesPayload?.Data?.summaries ?? summariesPayload?.data?.Summaries ?? summariesPayload?.data?.summaries ?? []
+      }
+    });
   })
 );
 
@@ -1631,6 +2443,356 @@ app.patch(
 
     const updated = await currentJobberForUser(req.user);
     res.json(updated);
+  })
+);
+
+app.get(
+  "/customers",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    res.json(await listCustomers(req.user.jobberId));
+  })
+);
+
+app.post(
+  "/customers",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const created = await createCustomer(req.user.jobberId, req.body || {});
+    res.status(201).json(created);
+  })
+);
+
+app.get(
+  "/customers/:id",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const customer = await getCustomerDetail(req.user.jobberId, req.params.id);
+    if (!customer) return res.status(404).json({ error: "Customer not found" });
+    res.json(customer);
+  })
+);
+
+app.patch(
+  "/customers/:id",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const updated = await updateCustomer(req.user.jobberId, req.params.id, req.body || {});
+    if (!updated) return res.status(404).json({ error: "Customer not found" });
+    res.json(updated);
+  })
+);
+
+app.get(
+  "/customers/:id/pricing-profile",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const profile = await getLatestCustomerPricingProfile(req.user.jobberId, req.params.id);
+    if (profile === undefined) return res.status(404).json({ error: "Customer not found" });
+    res.json(profile);
+  })
+);
+
+app.put(
+  "/customers/:id/pricing-profile",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const saved = await saveCustomerPricingProfile(req.user.jobberId, req.params.id, req.body || {});
+    if (saved === undefined) return res.status(404).json({ error: "Customer not found" });
+    res.json(saved);
+  })
+);
+
+app.post(
+  "/customers/:id/contacts",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const created = await createCustomerContact(req.user.jobberId, req.params.id, req.body || {});
+    if (created === undefined) return res.status(404).json({ error: "Customer not found" });
+    res.status(201).json(created);
+  })
+);
+
+app.patch(
+  "/customers/:id/contacts/:contactId",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const updated = await updateCustomerContact(req.user.jobberId, req.params.id, req.params.contactId, req.body || {});
+    if (updated === undefined) return res.status(404).json({ error: "Customer not found" });
+    if (updated === null) return res.status(404).json({ error: "Customer contact not found" });
+    res.json(updated);
+  })
+);
+
+app.delete(
+  "/customers/:id/contacts/:contactId",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const deleted = await deleteCustomerContact(req.user.jobberId, req.params.id, req.params.contactId);
+    if (deleted === undefined) return res.status(404).json({ error: "Customer not found" });
+    if (!deleted) return res.status(404).json({ error: "Customer contact not found" });
+    res.json({ ok: true });
+  })
+);
+
+app.get(
+  "/pricing/sources",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    res.json(
+      await listPricingSources(req.user.jobberId, {
+        pricingDate: req.query.pricingDate,
+        sourceType: req.query.sourceType
+      })
+    );
+  })
+);
+
+app.post(
+  "/pricing/sources",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const created = await createPricingSource(req.user.jobberId, req.user.userId, req.body || {});
+    res.status(201).json(created);
+  })
+);
+
+app.get(
+  "/pricing/sources/:id",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const snapshot = await getPricingSourceDetail(req.user.jobberId, req.params.id);
+    if (!snapshot) return res.status(404).json({ error: "Pricing source not found" });
+    res.json(snapshot);
+  })
+);
+
+app.post(
+  "/pricing/sources/:id/values",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const payloadValues = Array.isArray(req.body?.values) ? req.body.values : Array.isArray(req.body) ? req.body : null;
+    const saved = await createPricingSourceValues(req.user.jobberId, req.params.id, payloadValues);
+    if (saved === undefined) return res.status(404).json({ error: "Pricing source not found" });
+    res.status(201).json(saved);
+  })
+);
+
+app.get(
+  "/pricing/taxes",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    res.json(
+      await listPricingTaxes(req.user.jobberId, {
+        productFamily: req.query.productFamily,
+        effectiveDate: req.query.effectiveDate
+      })
+    );
+  })
+);
+
+app.put(
+  "/pricing/taxes",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const schedules = Array.isArray(req.body?.schedules) ? req.body.schedules : [req.body || {}];
+    res.json(await savePricingTaxes(req.user.jobberId, req.user.userId, schedules));
+  })
+);
+
+app.get(
+  "/pricing/rules",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    res.json(
+      await listPricingRules(req.user.jobberId, {
+        productFamily: req.query.productFamily,
+        status: req.query.status,
+        effectiveDate: req.query.effectiveDate
+      })
+    );
+  })
+);
+
+app.post(
+  "/pricing/rules",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const created = await createPricingRule(req.user.jobberId, req.body || {});
+    res.status(201).json(created);
+  })
+);
+
+app.get(
+  "/pricing/rules/:id",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const rule = await getPricingRuleDetail(req.user.jobberId, req.params.id);
+    if (!rule) return res.status(404).json({ error: "Pricing rule not found" });
+    res.json(rule);
+  })
+);
+
+app.patch(
+  "/pricing/rules/:id",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const updated = await updatePricingRule(req.user.jobberId, req.params.id, req.body || {});
+    if (!updated) return res.status(404).json({ error: "Pricing rule not found" });
+    res.json(updated);
+  })
+);
+
+app.put(
+  "/pricing/rules/:id/components",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const components = Array.isArray(req.body?.components) ? req.body.components : [];
+    const saved = await savePricingRuleComponents(req.user.jobberId, req.params.id, components);
+    if (saved === undefined) return res.status(404).json({ error: "Pricing rule not found" });
+    res.json(saved);
+  })
+);
+
+app.put(
+  "/pricing/rules/:id/vendor-sets",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const vendorSets = Array.isArray(req.body?.vendorSets) ? req.body.vendorSets : [];
+    const saved = await savePricingRuleVendorSets(req.user.jobberId, req.params.id, vendorSets);
+    if (saved === undefined) return res.status(404).json({ error: "Pricing rule not found" });
+    res.json(saved);
+  })
+);
+
+app.post(
+  "/pricing/runs/preview",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const customerId = pricingText(req.body?.customerId);
+    if (!customerId) return res.status(400).json({ error: "customerId is required" });
+    const preview = await previewCustomerPricing({
+      jobberId: req.user.jobberId,
+      customerId,
+      pricingDate: req.body?.pricingDate
+    });
+    if (!preview.customer) return res.status(404).json({ error: "Customer not found" });
+    res.json(preview);
+  })
+);
+
+app.post(
+  "/pricing/runs",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const customerId = pricingText(req.body?.customerId) || null;
+    const result = await generateCustomerPricingRun({
+      jobberId: req.user.jobberId,
+      userId: req.user.userId,
+      customerId,
+      pricingDate: req.body?.pricingDate
+    });
+    if (customerId && result.outputs.length === 0 && result.incompleteCount === 0) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+    res.json(result);
+  })
+);
+
+app.get(
+  "/pricing/runs/:date",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const pricingDate = pricingNullableDate(req.params.date);
+    if (!pricingDate) return res.status(400).json({ error: "Valid pricing date is required" });
+    const outputs = await listGeneratedCustomerPrices(req.user.jobberId, {
+      pricingDate,
+      customerId: req.query?.customerId,
+      status: req.query?.status,
+      limit: req.query?.limit
+    });
+    res.json({
+      pricingDate,
+      total: outputs.length,
+      generatedCount: outputs.filter((item) => item.status !== "incomplete").length,
+      incompleteCount: outputs.filter((item) => item.status === "incomplete").length,
+      outputs
+    });
+  })
+);
+
+app.get(
+  "/pricing/outputs",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    res.json(await listGeneratedCustomerPrices(req.user.jobberId, {
+      pricingDate: req.query?.pricingDate,
+      customerId: req.query?.customerId,
+      status: req.query?.status,
+      limit: req.query?.limit
+    }));
+  })
+);
+
+app.get(
+  "/pricing/outputs/:id",
+  requireAuth,
+  requireRole("manager"),
+  asyncHandler(async (req, res) => {
+    if (!req.user.jobberId) return res.status(400).json({ error: "No jobber selected" });
+    const output = await getGeneratedCustomerPriceDetail(req.user.jobberId, req.params.id);
+    if (!output) return res.status(404).json({ error: "Generated output not found" });
+    res.json(output);
   })
 );
 
@@ -2490,6 +3652,324 @@ app.post(
 );
 
 app.get(
+  "/sites/:id/allied-transactions/summary",
+  requireAuth,
+  requireSiteAccess,
+  asyncHandler(async (req, res) => {
+    const [siteResult, filterOptions, alliedData] = await Promise.all([
+      query(
+        `SELECT id, site_code AS "siteCode", name, timezone
+         FROM sites
+         WHERE id=$1`,
+        [req.params.id]
+      ),
+      alliedFilterOptionsForSite(req.params.id),
+      alliedRowsForFilters(req.params.id, req.query)
+    ]);
+
+    if (siteResult.rowCount === 0) {
+      return res.status(404).json({ error: "Site not found" });
+    }
+
+    const rows = alliedData.rows;
+    const completedRows = rows.filter((row) => alliedMetricStatusSet.has(row.emvStatus));
+    const abortRows = rows.filter((row) => alliedAbortStatusSet.has(row.emvStatus));
+    const contactlessRows = rows.filter((row) => row.entryMethod === "EmvContactless");
+    const emvRows = rows.filter((row) => String(row.entryMethod).startsWith("Emv") || String(row.entryMethod).includes("Chip"));
+    const presetCashRows = rows.filter((row) => row.paymentType === "Preset");
+    const flaggedRows = rows.filter((row) => row.flagged);
+    const sales = completedRows.reduce((sum, row) => sum + (toNumber(row.totalAmount, 0) || 0), 0);
+    const gallons = completedRows.reduce((sum, row) => sum + (toNumber(row.fuelQuantityGallons, 0) || 0), 0);
+    const cardMix = alliedDistribution(rows, "cardName");
+    const denialMix = alliedDistribution(rows.filter((row) => row.tagDenialReason), "tagDenialReason");
+    const seriesByDay = alliedSeriesByDay(rows);
+    const issues = alliedIssues(rows, seriesByDay);
+    const pumpHealth = alliedPumpHealth(rows);
+    const ticketCompare = alliedCompareWindows(seriesByDay, (item) => item.averageTicket);
+    const transactionCompare = alliedCompareWindows(seriesByDay, (item) => item.transactions);
+
+    res.json({
+      site: siteResult.rows[0],
+      range: alliedData.range,
+      filterOptions,
+      kpis: {
+        totalTransactions: rows.length,
+        totalSales: Number(sales.toFixed(2)),
+        totalGallons: Number(gallons.toFixed(3)),
+        averageTicket: completedRows.length ? Number((sales / completedRows.length).toFixed(2)) : 0,
+        averageGallonsPerSale: completedRows.length ? Number((gallons / completedRows.length).toFixed(3)) : 0,
+        completionRate: rows.length ? Number((completedRows.length / rows.length).toFixed(4)) : 0,
+        customerAbortRate: rows.length ? Number((abortRows.length / rows.length).toFixed(4)) : 0,
+        contactlessShare: rows.length ? Number((contactlessRows.length / rows.length).toFixed(4)) : 0,
+        emvShare: rows.length ? Number((emvRows.length / rows.length).toFixed(4)) : 0,
+        presetCashCount: presetCashRows.length,
+        presetCashShare: rows.length ? Number((presetCashRows.length / rows.length).toFixed(4)) : 0,
+        topCardBrand: cardMix[0] || null,
+        topDenialReason: denialMix[0] || null,
+        suspiciousFlaggedCount: flaggedRows.length
+      },
+      trendComparisons: {
+        transactions: transactionCompare,
+        averageTicket: ticketCompare,
+        aborts: alliedCompareWindows(seriesByDay, (item) => item.aborts),
+        issues: alliedCompareWindows(seriesByDay, (item) => item.issues)
+      },
+      trends: {
+        byDay: seriesByDay,
+        paymentTypeMix: alliedDistribution(rows, "paymentType").slice(0, 8),
+        cardTypeMix: alliedDistribution(rows, "cardType").slice(0, 8),
+        cardBrandMix: cardMix.slice(0, 8),
+        emvStatusDistribution: alliedDistribution(rows, "emvStatus").slice(0, 8),
+        entryMethodDistribution: alliedDistribution(rows, "entryMethod").slice(0, 8),
+        denialReasonDistribution: denialMix.slice(0, 8),
+        topPumpsByVolume: [...pumpHealth].sort((a, b) => b.gallons - a.gallons).slice(0, 10),
+        topPumpsByCount: [...pumpHealth].sort((a, b) => b.transactions - a.transactions).slice(0, 10)
+      },
+      issues,
+      pumpHealth
+    });
+  })
+);
+
+app.get(
+  "/sites/:id/allied-transactions",
+  requireAuth,
+  requireSiteAccess,
+  asyncHandler(async (req, res) => {
+    const { whereClause, params, range } = alliedFilterSql(req.query, req.params.id);
+    const sort = alliedNormalizeSort(req.query.sortBy, req.query.sortDir);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(200, Math.max(10, Number(req.query.pageSize) || 25));
+    const offset = (page - 1) * pageSize;
+    const flaggedOnly = req.query.minFlaggedOnly === "true";
+    const flaggedClause = flaggedOnly
+      ? ` AND (
+          (emv_status IN ('Complete','Approved') AND COALESCE(total_amount, 0) <= 0)
+          OR (emv_status IN ('Complete','Approved') AND COALESCE(fuel_quantity_gallons, 0) <= 0)
+          OR (emv_status = 'CustomerAbort' AND (COALESCE(total_amount, 0) > 0 OR COALESCE(fuel_quantity_gallons, 0) > 0))
+          OR (auth_amount IS NOT NULL AND total_amount IS NOT NULL AND auth_amount < total_amount)
+          OR (emv_status IN ('Complete','Approved') AND COALESCE(fuel_position_id, '') = '')
+          OR (COALESCE(first8, '') <> '' AND first8 !~ '^[0-9]{8}$')
+          OR (COALESCE(last4, '') <> '' AND last4 !~ '^[0-9]{4}$')
+          OR (COALESCE(exp_date, '') <> '' AND exp_date !~ '^[0-9]{2}/[0-9]{2}$')
+        )`
+      : "";
+
+    const [countResult, rowsResult] = await Promise.all([
+      query(
+        `SELECT COUNT(*)::int AS count
+         FROM allied_transactions
+         WHERE ${whereClause}${flaggedClause}`,
+        params
+      ),
+      query(
+        `SELECT
+          store_id || ':' || transaction_id AS id,
+          store_id AS "siteId",
+          transaction_id AS "transactionId",
+          account_origin AS "accountOrigin",
+          actual_sales_price AS "actualSalesPrice",
+          auth_amount AS "authAmount",
+          card_name AS "cardName",
+          card_type AS "cardType",
+          emv_error_code AS "emvErrorCode",
+          emv_status AS "emvStatus",
+          emv_tran_type AS "emvTranType",
+          entry_method AS "entryMethod",
+          exp_date AS "expDate",
+          fallback_to_msr AS "fallbackToMsr",
+          first8,
+          fuel_description AS "fuelDescription",
+          fuel_position_id AS "fuelPositionId",
+          fuel_quantity_gallons AS "fuelQuantityGallons",
+          last4,
+          payment_type AS "paymentType",
+          store_id AS "storeId",
+          tag_denial_reason AS "tagDenialReason",
+          "timestamp",
+          timezone,
+          total_amount AS "totalAmount"
+         FROM allied_transactions
+         WHERE ${whereClause}${flaggedClause}
+         ORDER BY ${sort.key} ${sort.direction}, "timestamp" DESC
+         LIMIT ${pageSize} OFFSET ${offset}`,
+        params
+      )
+    ]);
+
+    res.json({
+      range,
+      page,
+      pageSize,
+      total: countResult.rows[0]?.count || 0,
+      rows: rowsResult.rows.map(alliedRowFromDb)
+    });
+  })
+);
+
+app.get(
+  "/sites/:id/allied-transactions/export",
+  requireAuth,
+  requireSiteAccess,
+  asyncHandler(async (req, res) => {
+    const { rows } = await alliedRowsForFilters(req.params.id, req.query);
+    const headers = [
+      "timestamp",
+      "transaction_id",
+      "store_id",
+      "fuel_position_id",
+      "payment_type",
+      "card_name",
+      "card_type",
+      "entry_method",
+      "emv_tran_type",
+      "emv_status",
+      "emv_error_code",
+      "tag_denial_reason",
+      "fuel_quantity_gallons",
+      "actual_sales_price",
+      "total_amount",
+      "auth_amount",
+      "masked_pan",
+      "flagged",
+      "likely_transaction_type"
+    ];
+    const lines = [
+      headers.join(","),
+      ...rows.map((row) => [
+        row.timestamp,
+        row.transactionId,
+        row.storeId,
+        row.fuelPositionId,
+        row.paymentType,
+        row.cardName,
+        row.cardType,
+        row.entryMethod,
+        row.emvTranType,
+        row.emvStatus,
+        row.emvErrorCode,
+        row.tagDenialReason,
+        row.fuelQuantityGallons,
+        row.actualSalesPrice,
+        row.totalAmount,
+        row.authAmount,
+        row.maskedPan,
+        row.flagged,
+        row.likelyTransactionType
+      ].map(alliedTextCsv).join(","))
+    ];
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=\"allied-transactions-${req.params.id}.csv\"`);
+    res.send(lines.join("\n"));
+  })
+);
+
+app.get(
+  "/allied-transactions/portfolio-summary",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const visibleSiteIds = await siteIdsForUser(req.user);
+    if (!visibleSiteIds.length) {
+      return res.json({
+        range: alliedDefaultDateRange(),
+        kpis: {
+          visibleSites: 0,
+          sitesWithTransactions: 0,
+          totalTransactions: 0,
+          totalSales: 0,
+          totalGallons: 0,
+          completionRate: 0,
+          abortRate: 0,
+          flaggedRate: 0
+        },
+        trends: { byDay: [] },
+        siteSummaries: []
+      });
+    }
+
+    const [rowsPayload, visibleSites] = await Promise.all([
+      alliedRowsForVisibleSites(visibleSiteIds, req.query),
+      query(
+        `SELECT id, site_code AS "siteCode", name, region
+         FROM sites
+         WHERE id = ANY($1::text[])
+         ORDER BY site_code`,
+        [visibleSiteIds]
+      )
+    ]);
+
+    const rows = rowsPayload.rows;
+    const bySite = new Map();
+    for (const site of visibleSites.rows) {
+      bySite.set(site.id, {
+        siteId: site.id,
+        siteCode: site.siteCode,
+        siteName: site.name,
+        region: site.region,
+        totalTransactions: 0,
+        totalSales: 0,
+        totalGallons: 0,
+        completedCount: 0,
+        abortCount: 0,
+        flaggedCount: 0,
+        topDenialReason: null,
+        topCardBrand: null
+      });
+    }
+
+    for (const row of rows) {
+      const bucket = bySite.get(row.storeId);
+      if (!bucket) continue;
+      bucket.totalTransactions += 1;
+      bucket.totalSales += toNumber(row.totalAmount, 0) || 0;
+      bucket.totalGallons += toNumber(row.fuelQuantityGallons, 0) || 0;
+      if (alliedMetricStatusSet.has(row.emvStatus)) bucket.completedCount += 1;
+      if (alliedAbortStatusSet.has(row.emvStatus)) bucket.abortCount += 1;
+      if (row.flagged) bucket.flaggedCount += 1;
+    }
+
+    for (const bucket of bySite.values()) {
+      const siteRows = rows.filter((row) => row.storeId === bucket.siteId);
+      const denialMix = alliedDistribution(siteRows.filter((row) => row.tagDenialReason), "tagDenialReason");
+      const cardMix = alliedDistribution(siteRows, "cardName");
+      bucket.totalSales = Number(bucket.totalSales.toFixed(2));
+      bucket.totalGallons = Number(bucket.totalGallons.toFixed(3));
+      bucket.averageTicket = bucket.completedCount ? Number((bucket.totalSales / bucket.completedCount).toFixed(2)) : 0;
+      bucket.completionRate = bucket.totalTransactions ? Number((bucket.completedCount / bucket.totalTransactions).toFixed(4)) : 0;
+      bucket.abortRate = bucket.totalTransactions ? Number((bucket.abortCount / bucket.totalTransactions).toFixed(4)) : 0;
+      bucket.flaggedRate = bucket.totalTransactions ? Number((bucket.flaggedCount / bucket.totalTransactions).toFixed(4)) : 0;
+      bucket.topDenialReason = denialMix[0]?.label || "None";
+      bucket.topCardBrand = cardMix[0]?.label || "-";
+    }
+
+    const siteSummaries = [...bySite.values()].sort((a, b) => b.totalSales - a.totalSales || b.totalTransactions - a.totalTransactions);
+    const completedRows = rows.filter((row) => alliedMetricStatusSet.has(row.emvStatus));
+    const abortRows = rows.filter((row) => alliedAbortStatusSet.has(row.emvStatus));
+    const flaggedRows = rows.filter((row) => row.flagged);
+    const totalSales = completedRows.reduce((sum, row) => sum + (toNumber(row.totalAmount, 0) || 0), 0);
+    const totalGallons = completedRows.reduce((sum, row) => sum + (toNumber(row.fuelQuantityGallons, 0) || 0), 0);
+
+    res.json({
+      range: rowsPayload.range,
+      kpis: {
+        visibleSites: visibleSiteIds.length,
+        sitesWithTransactions: siteSummaries.filter((site) => site.totalTransactions > 0).length,
+        totalTransactions: rows.length,
+        totalSales: Number(totalSales.toFixed(2)),
+        totalGallons: Number(totalGallons.toFixed(3)),
+        completionRate: rows.length ? Number((completedRows.length / rows.length).toFixed(4)) : 0,
+        abortRate: rows.length ? Number((abortRows.length / rows.length).toFixed(4)) : 0,
+        flaggedRate: rows.length ? Number((flaggedRows.length / rows.length).toFixed(4)) : 0
+      },
+      trends: {
+        byDay: alliedSeriesByDay(rows)
+      },
+      siteSummaries
+    });
+  })
+);
+
+app.get(
   "/alerts",
   requireAuth,
   asyncHandler(async (req, res) => {
@@ -2753,7 +4233,11 @@ async function runSimulatorTick() {
 
 app.use((error, _req, res, _next) => {
   console.error(error);
-  res.status(500).json({ error: "Internal server error", detail: error.message });
+  const statusCode = Number(error?.statusCode) || 500;
+  res.status(statusCode).json({
+    error: statusCode >= 500 ? "Internal server error" : error.message,
+    detail: error.message
+  });
 });
 
 async function start() {

@@ -38,6 +38,9 @@ Run `Petroleum` locally when needed, and keep the public deployment state on **R
 - Important startup note:
   - the API must be started with local database env vars set, or login will fail with `Postgres connection is missing`
   - secure jobber secret decryption also requires an app encryption key
+  - the current local instance that was validated in this session used:
+    - `PETROLEUM_SECRET_KEY=petroleum-local-dev-key`
+    - `EIA_API_KEY` set in the API process env as a temporary fallback because the saved EIA DB secret was encrypted under an older app secret
   - use:
 
 ```powershell
@@ -103,17 +106,19 @@ $env:PETROLEUM_SECRET_KEY='your-stable-secret-key'
 ### 4. OPIS credentials moved to encrypted jobber-level database storage
 - OPIS no longer has to rely only on `OPIS_USERNAME` and `OPIS_PASSWORD` in the process env.
 - Current lookup order for OPIS credentials:
-  - `OPIS_USERNAME` / `OPIS_PASSWORD` env vars first
-  - encrypted `jobber_secrets` row for provider `opis` second
+  - encrypted `jobber_secrets` row for provider `opis` first
+  - `OPIS_USERNAME` / `OPIS_PASSWORD` env vars second as fallback
 - Admin UI now has an `OPIS Credentials` form under the Branding workspace for jobber admins.
 - Credentials are encrypted before they are stored in Postgres.
+- If an OPIS secret cannot be decrypted with the current `PETROLEUM_SECRET_KEY`, the backend now returns a clearer error telling the user to re-save the credentials in Admin.
 
 ### 5. EIA API key moved to encrypted jobber-level database storage
 - Current lookup order for EIA credentials:
-  - `EIA_API_KEY` env var first
-  - encrypted `jobber_secrets` row for provider `eia` second
+  - encrypted `jobber_secrets` row for provider `eia` first
+  - `EIA_API_KEY` env var second as fallback
 - Admin UI now has an `EIA API Key` form under the Branding workspace for jobber admins.
 - The backend normalizes pasted EIA email text and extracts the actual token if the full email body was pasted by mistake.
+- If an EIA secret cannot be decrypted with the current `PETROLEUM_SECRET_KEY`, the backend now returns a clearer error telling the user to re-save the key in Admin.
 
 ### 6. OPIS page redesign and pricing workflow changes
 - The OPIS view is now a simpler market monitor:
@@ -158,11 +163,174 @@ $env:PETROLEUM_SECRET_KEY='your-stable-secret-key'
 - brighter dropdown styling
 - tank history / seed data updates
 
+### 10. OPIS Raw report now uses supplier detail and summary detail together
+- The `OPIS Raw` tab under Pricing was significantly reworked to be closer to the bundled sample report.
+- The backend raw route:
+  - `GET /market/opis/raw`
+  - now combines:
+    - `SupplierPrices` for supplier/body rows
+    - `Summary` for benchmark-style metric lines
+- The live raw report is no longer just a JSON dump rendered in the page.
+- The page now generates OPIS-style report text from the live payload and compares it against the bundled sample report.
+- The raw report remains an approximation of the sample format, not a byte-for-byte reproduction.
+- Key frontend file:
+  - `apps/web/src/pricing/pages/PricingPage.tsx`
+- Key parser utility:
+  - `apps/web/src/pricing/utils/opisRawParser.ts`
+
+### 11. OPIS Raw filters now affect the displayed reports
+- The `OPIS Raw` tab now includes:
+  - `Market Filter`
+  - `Type Filter`
+- The `Type Filter` uses:
+  - live OPIS product/type names in live mode
+  - parsed section titles in sample mode
+- These filters now affect:
+  - the main raw report textarea
+  - the sample report pane
+  - the generated live report pane
+  - the live supplier rows table
+- The textarea is editable only when:
+  - sample/manual mode is active, and
+  - `All Markets` is selected
+- When a specific market is selected, the textarea becomes a filtered read-only view of the report.
+
+### 12. Customer pricing planning docs were added
+- A new customer-pricing workstream was started based on:
+  - `C:\Users\deepa\Downloads\Requirements Document (Software).docx`
+  - `C:\Users\deepa\Downloads\Updated CostCalculator_.xlsx`
+- New planning docs were added under `docs`:
+  - `docs/customer-pricing-implementation-plan.md`
+  - `docs/customer-pricing-phase1-spec.md`
+  - `docs/customer-pricing-backlog.md`
+  - `docs/customer-pricing-schema-foundation.md`
+- These documents now serve as the implementation guideline for the new customer pricing engine and output system.
+- Key conclusion:
+  - this should be built as a pricing engine plus customer output workflow
+  - not as a spreadsheet clone and not as an extension of the current React-only pricing formulas
+
+### 13. Customer pricing schema foundation was added in code
+- The first database schema pass was added in:
+  - `apps/api/src/db.js`
+- New tables added:
+  - `customers`
+  - `customer_contacts`
+  - `customer_pricing_profiles`
+  - `pricing_source_snapshots`
+  - `pricing_source_values`
+  - `pricing_tax_schedules`
+  - `pricing_rule_sets`
+  - `pricing_rule_components`
+  - `pricing_rule_vendor_sets`
+  - `pricing_export_templates`
+  - `generated_customer_prices`
+  - `pricing_export_jobs`
+- Supporting indexes were also added in `apps/api/src/db.js`.
+- This remains the schema foundation for the customer pricing engine and output workflow.
+
+### 14. Customer pricing backend and admin workspace now extend beyond the initial schema/API pass
+- The first API pass was added in:
+  - `apps/api/src/server.js`
+- Initial routes implemented:
+  - `GET /customers`
+  - `POST /customers`
+  - `GET /customers/:id`
+  - `PATCH /customers/:id`
+  - `GET /customers/:id/pricing-profile`
+  - `PUT /customers/:id/pricing-profile`
+  - `GET /pricing/sources`
+  - `POST /pricing/sources`
+- Additional backend routes were added after that initial pass:
+  - `GET /pricing/sources/:id`
+  - `POST /pricing/sources/:id/values`
+  - `GET /pricing/taxes`
+  - `PUT /pricing/taxes`
+  - `GET /pricing/rules`
+  - `POST /pricing/rules`
+  - `GET /pricing/rules/:id`
+  - `PATCH /pricing/rules/:id`
+  - `PUT /pricing/rules/:id/components`
+  - `PUT /pricing/rules/:id/vendor-sets`
+  - `POST /pricing/runs/preview`
+  - `POST /customers/:id/contacts`
+  - `PATCH /customers/:id/contacts/:contactId`
+  - `DELETE /customers/:id/contacts/:contactId`
+- These routes are jobber-scoped and use the existing auth/role middleware patterns.
+- Supporting backend modules now exist:
+  - repository/query layer:
+    - `apps/api/src/pricing/repositories.js`
+  - pricing engine skeleton:
+    - `apps/api/src/pricing/engine.js`
+- The pricing preview engine is now rule-aware instead of being only a placeholder:
+  - it can evaluate components sourced from:
+    - `source_value`
+    - `tax`
+    - `customer_profile`
+    - `vendor_min`
+    - `constant/default`
+  - it returns a traceable preview shape per product family
+  - workbook-oriented profile token references like `$profile.marketKey` and `$profile.terminalKey` are supported in rule metadata/source refs
+
+### 15. Customer pricing workbook-derived test data loader was added
+- A local workbook-driven data population script was added:
+  - `apps/api/src/applyWorkbookPricingTestData.js`
+- API package script added:
+  - `npm.cmd --workspace apps/api run seed:pricing-workbook`
+- The script uses workbook-derived values from:
+  - `C:\Users\deepa\Downloads\Updated CostCalculator_.xlsx`
+- Workbook-derived references that were applied into local test data include:
+  - spot quote ids:
+    - `SFRCRR`
+    - `SFRCRP`
+    - `SFRCN2`
+  - RIN and ethanol references:
+    - `USARNC`
+    - `SFR799`
+  - market adders from workbook row `33`
+  - contract-minus values from workbook rows `51-54`
+- The script populates local workbook test data for the current local date context:
+  - customers
+  - customer pricing profiles
+  - source snapshot plus source values
+  - tax schedules
+  - active rule sets and vendor sets
+- This script was executed successfully in this session against the local database and reported:
+  - `Applied workbook pricing test data for 2 jobber(s) on 2026-03-31. Workbook present=true`
+
+### 16. Separate Price Tables tab was added to the web app
+- The existing `Pricing` market dashboard still exists.
+- A separate top-level admin workflow tab was added:
+  - `Price Tables`
+- Key frontend files:
+  - `apps/web/src/App.jsx`
+  - `apps/web/src/api.js`
+  - `apps/web/src/pages/PriceTablesPage.jsx`
+  - `apps/web/src/styles.css`
+- Current `Price Tables` functionality includes:
+  - customer list and customer editing
+  - structured customer contact editing
+  - pricing profile editing with structured fields for:
+    - `branch`
+    - `marketKey`
+    - `terminalKey`
+    - `extraRulesJson` as an escape hatch
+  - structured rule editing for:
+    - rule components
+    - vendor sets
+  - structured tax editing
+  - source snapshot creation and source-value row entry
+  - source snapshot detail viewing
+  - pricing preview using `POST /pricing/runs/preview`
+- Current route:
+  - `http://localhost:5173/price-tables`
+
 ## Validation Completed
 - Web build succeeded multiple times with:
   - `npm.cmd --workspace apps/web run build`
 - API syntax check succeeded with:
   - `node --check apps/api/src/server.js`
+- DB schema file syntax check succeeded with:
+  - `node --check apps/api/src/db.js`
 - Local API health endpoint succeeded:
   - `http://localhost:4000/health`
 - Local Pricing API route was verified after restart with demo login.
@@ -172,7 +340,30 @@ $env:PETROLEUM_SECRET_KEY='your-stable-secret-key'
 - Verified encrypted secret save paths were added for:
   - `GET/PUT /jobber/opis-credentials`
   - `GET/PUT /jobber/eia-credentials`
+- Verified on localhost at the end of this session:
+  - `http://localhost:5173` -> `200`
+  - `http://localhost:5173/pricing` -> `200`
+  - `http://localhost:4000/health` -> `200`
+  - `GET /market/pricing` with demo login -> `200`
+  - `GET /market/opis/raw?timing=0&state=ALL&fuelType=all` with demo login -> `200`
+- Verified current local secret rows exist for:
+  - `jobber-california / opis`
+  - `jobber-california / eia`
+- Important local secret note:
+  - both saved DB secrets currently fail decryption under `PETROLEUM_SECRET_KEY=petroleum-local-dev-key`
+  - this means they were encrypted earlier under a different app secret
+  - local pricing works right now because the API process was relaunched with the EIA key in env as fallback
+  - the next agent should re-save OPIS and EIA secrets in Admin under the current stable app secret
 - Earlier tank validations from the original handoff still apply, but note the local SQL dump was later thinned back to `30-minute` history.
+- Customer pricing work verification completed:
+  - `node --check apps/api/src/db.js` passed after schema changes
+  - `node --check apps/api/src/server.js` passed after customer/source/rule/contact API changes
+  - `node --check apps/api/src/pricing/repositories.js` passed
+  - `node --check apps/api/src/pricing/engine.js` passed
+  - `node --check apps/api/src/applyWorkbookPricingTestData.js` passed
+  - `npm.cmd --workspace apps/api run build` passed
+  - `npm.cmd --workspace apps/web run build` passed
+  - the web build still shows the existing Vite large chunk warning, but it is not a build failure
 
 ## Railway Database Reseed Status
 - The active Railway database is test/demo data and was treated as safe to overwrite.
@@ -211,6 +402,14 @@ npm.cmd --workspace apps/api run dev
 npm.cmd --workspace apps/web run dev
 ```
 
+If the next agent needs the local Pricing page to work immediately before re-saving the EIA key in Admin, they can temporarily start the API with:
+
+```powershell
+$env:EIA_API_KEY='[current valid local EIA key]'
+```
+
+That should be treated as a temporary fallback only until the DB secret is re-saved under the active app secret.
+
 ## Command To Reseed Active Railway Database
 Only use this for the test/demo Railway database:
 
@@ -245,12 +444,40 @@ npm.cmd --workspace apps/api run seed
   - forward curves are still mock data
   - `Update now` triggers a fresh dashboard reload, but only EIA-backed sections are truly live
   - if the Pricing page stops updating, check `DATABASE_URL`, `PGSSL`, `PETROLEUM_SECRET_KEY`, and whether the current jobber has an EIA key configured
+- Customer pricing workstream notes:
+  - implementation guidance now lives under `docs/customer-pricing-*.md`
+  - schema foundation keys now live in `docs/customer-pricing-schema-foundation.md`
+  - current backend files to read first:
+    - `apps/api/src/server.js`
+    - `apps/api/src/pricing/repositories.js`
+    - `apps/api/src/pricing/engine.js`
+    - `apps/api/src/applyWorkbookPricingTestData.js`
+  - current frontend files to read first:
+    - `apps/web/src/App.jsx`
+    - `apps/web/src/api.js`
+    - `apps/web/src/pages/PriceTablesPage.jsx`
+    - `apps/web/src/styles.css`
+  - workbook-derived local pricing test data was applied on `2026-03-31`
+  - after the latest backend edits, restart the local API again before testing newer customer-pricing routes/UI
+  - current next logical coding steps are:
+    - add generated pricing run/history/output screens to `Price Tables`
+    - then replace freeform canonical market/product/vendor key inputs with controlled dropdowns/selects
+    - then continue toward export templates and generated customer output workflows
 - OPIS page notes:
   - current live market route is `GET /market/opis`
   - it requires valid OPIS credentials from env or encrypted jobber storage
   - Admin > Branding now includes both OPIS and EIA credential forms for jobber admins
+- OPIS raw page notes:
+  - current raw route is `GET /market/opis/raw`
+  - it now combines `SupplierPrices` and `Summary`
+  - the raw report generator uses `SupplierPrices` for supplier rows and `Summary` for benchmark metric rows where possible
+  - current filters in the raw tab are:
+    - `Market Filter`
+    - `Type Filter`
+  - if the displayed report does not change with filters, inspect `apps/web/src/pricing/pages/PricingPage.tsx`
 - Secret storage note:
   - encrypted secrets are stored in `jobber_secrets`
   - pricing rate configs are stored in `jobber_pricing_configs`
   - if `PETROLEUM_SECRET_KEY` changes between restarts, previously saved encrypted secrets will no longer decrypt
+  - when that happens, the fix is to re-save the affected secret in Admin under the active app secret
 
