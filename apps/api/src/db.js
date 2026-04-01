@@ -275,6 +275,208 @@ async function initDb() {
       updated_by TEXT NOT NULL,
       PRIMARY KEY (jobber_id, provider)
     );
+
+    CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      jobber_id TEXT NOT NULL REFERENCES jobbers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      address_line1 TEXT NOT NULL DEFAULT '',
+      address_line2 TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT '',
+      postal_code TEXT NOT NULL DEFAULT '',
+      terminal_key TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS customer_contacts (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      fax_email TEXT NOT NULL DEFAULT '',
+      is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+      delivery_method TEXT NOT NULL DEFAULT 'email',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS customer_pricing_profiles (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      effective_start DATE NOT NULL,
+      effective_end DATE,
+      freight_miles DOUBLE PRECISION,
+      freight_cost_gas DOUBLE PRECISION,
+      freight_cost_diesel DOUBLE PRECISION,
+      rack_margin_gas DOUBLE PRECISION,
+      rack_margin_diesel DOUBLE PRECISION,
+      discount_regular DOUBLE PRECISION,
+      discount_mid DOUBLE PRECISION,
+      discount_premium DOUBLE PRECISION,
+      discount_diesel DOUBLE PRECISION,
+      output_template_id TEXT,
+      rules_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pricing_source_snapshots (
+      id TEXT PRIMARY KEY,
+      jobber_id TEXT NOT NULL REFERENCES jobbers(id) ON DELETE CASCADE,
+      pricing_date DATE NOT NULL,
+      source_type TEXT NOT NULL,
+      source_label TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      received_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL,
+      created_by TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS pricing_source_values (
+      id TEXT PRIMARY KEY,
+      snapshot_id TEXT NOT NULL REFERENCES pricing_source_snapshots(id) ON DELETE CASCADE,
+      market_key TEXT NOT NULL DEFAULT '',
+      terminal_key TEXT NOT NULL DEFAULT '',
+      product_key TEXT NOT NULL DEFAULT '',
+      vendor_key TEXT NOT NULL DEFAULT '',
+      quote_code TEXT NOT NULL DEFAULT '',
+      value DOUBLE PRECISION,
+      unit TEXT NOT NULL DEFAULT '',
+      effective_date DATE,
+      metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pricing_tax_schedules (
+      id TEXT PRIMARY KEY,
+      jobber_id TEXT NOT NULL REFERENCES jobbers(id) ON DELETE CASCADE,
+      product_family TEXT NOT NULL,
+      tax_name TEXT NOT NULL,
+      value DOUBLE PRECISION NOT NULL,
+      unit TEXT NOT NULL DEFAULT '',
+      effective_start DATE NOT NULL,
+      effective_end DATE,
+      created_at TIMESTAMPTZ NOT NULL,
+      created_by TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pricing_rule_sets (
+      id TEXT PRIMARY KEY,
+      jobber_id TEXT NOT NULL REFERENCES jobbers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      product_family TEXT NOT NULL,
+      effective_start DATE NOT NULL,
+      effective_end DATE,
+      status TEXT NOT NULL DEFAULT 'draft',
+      version_label TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pricing_rule_components (
+      id TEXT PRIMARY KEY,
+      rule_set_id TEXT NOT NULL REFERENCES pricing_rule_sets(id) ON DELETE CASCADE,
+      component_key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      source_kind TEXT NOT NULL,
+      source_ref TEXT NOT NULL DEFAULT '',
+      default_value DOUBLE PRECISION,
+      multiplier DOUBLE PRECISION NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_editable BOOLEAN NOT NULL DEFAULT TRUE,
+      metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb
+    );
+
+    CREATE TABLE IF NOT EXISTS pricing_rule_vendor_sets (
+      id TEXT PRIMARY KEY,
+      rule_set_id TEXT NOT NULL REFERENCES pricing_rule_sets(id) ON DELETE CASCADE,
+      selection_mode TEXT NOT NULL,
+      product_family TEXT NOT NULL,
+      market_key TEXT NOT NULL DEFAULT '',
+      vendors_json JSONB NOT NULL DEFAULT '[]'::jsonb
+    );
+
+    CREATE TABLE IF NOT EXISTS pricing_export_templates (
+      id TEXT PRIMARY KEY,
+      jobber_id TEXT NOT NULL REFERENCES jobbers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      template_body TEXT NOT NULL DEFAULT '',
+      template_schema_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      is_default BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS generated_customer_prices (
+      id TEXT PRIMARY KEY,
+      jobber_id TEXT NOT NULL REFERENCES jobbers(id) ON DELETE CASCADE,
+      customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      pricing_date DATE NOT NULL,
+      rule_set_id TEXT REFERENCES pricing_rule_sets(id) ON DELETE SET NULL,
+      source_snapshot_group_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      regular_base DOUBLE PRECISION,
+      mid_base DOUBLE PRECISION,
+      premium_base DOUBLE PRECISION,
+      diesel_base DOUBLE PRECISION,
+      regular_total DOUBLE PRECISION,
+      mid_total DOUBLE PRECISION,
+      premium_total DOUBLE PRECISION,
+      diesel_total DOUBLE PRECISION,
+      detail_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL DEFAULT 'generated',
+      created_at TIMESTAMPTZ NOT NULL,
+      created_by TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS pricing_export_jobs (
+      id TEXT PRIMARY KEY,
+      jobber_id TEXT NOT NULL REFERENCES jobbers(id) ON DELETE CASCADE,
+      pricing_date DATE NOT NULL,
+      template_id TEXT REFERENCES pricing_export_templates(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'generated',
+      requested_by TEXT NOT NULL,
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      result_json JSONB NOT NULL DEFAULT '{}'::jsonb
+    );
+
+    CREATE TABLE IF NOT EXISTS allied_transactions (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+      transaction_id TEXT NOT NULL,
+      account_origin TEXT NOT NULL DEFAULT '',
+      actual_sales_price DOUBLE PRECISION,
+      auth_amount DOUBLE PRECISION,
+      card_name TEXT NOT NULL DEFAULT '',
+      card_type TEXT NOT NULL DEFAULT '',
+      emv_error_code TEXT NOT NULL DEFAULT '',
+      emv_status TEXT NOT NULL DEFAULT '',
+      emv_tran_type TEXT NOT NULL DEFAULT '',
+      entry_method TEXT NOT NULL DEFAULT '',
+      exp_date TEXT NOT NULL DEFAULT '',
+      fallback_to_msr BOOLEAN NOT NULL DEFAULT FALSE,
+      first8 TEXT NOT NULL DEFAULT '',
+      fuel_description TEXT NOT NULL DEFAULT '',
+      fuel_position_id TEXT NOT NULL DEFAULT '',
+      fuel_quantity_gallons DOUBLE PRECISION,
+      last4 TEXT NOT NULL DEFAULT '',
+      payment_type TEXT NOT NULL DEFAULT '',
+      store_id TEXT NOT NULL DEFAULT '',
+      tag_denial_reason TEXT NOT NULL DEFAULT '',
+      timestamp TIMESTAMPTZ NOT NULL,
+      timezone TEXT NOT NULL DEFAULT 'America/New_York',
+      total_amount DOUBLE PRECISION,
+      raw_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL,
+      UNIQUE(site_id, transaction_id)
+    );
   `);
 
   await query(`
@@ -359,8 +561,118 @@ async function initDb() {
   `);
 
   await query(`
+    CREATE INDEX IF NOT EXISTS customers_jobber_id_idx
+    ON customers(jobber_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS customer_contacts_customer_id_idx
+    ON customer_contacts(customer_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS customer_pricing_profiles_customer_id_idx
+    ON customer_pricing_profiles(customer_id, effective_start DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS pricing_source_snapshots_jobber_date_idx
+    ON pricing_source_snapshots(jobber_id, pricing_date DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS pricing_source_values_snapshot_id_idx
+    ON pricing_source_values(snapshot_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS pricing_tax_schedules_jobber_effective_idx
+    ON pricing_tax_schedules(jobber_id, effective_start DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS pricing_rule_sets_jobber_status_idx
+    ON pricing_rule_sets(jobber_id, status, effective_start DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS pricing_rule_components_rule_set_id_idx
+    ON pricing_rule_components(rule_set_id, sort_order ASC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS pricing_rule_vendor_sets_rule_set_id_idx
+    ON pricing_rule_vendor_sets(rule_set_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS pricing_export_templates_jobber_id_idx
+    ON pricing_export_templates(jobber_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS generated_customer_prices_jobber_date_idx
+    ON generated_customer_prices(jobber_id, pricing_date DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS generated_customer_prices_customer_id_idx
+    ON generated_customer_prices(customer_id, pricing_date DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS pricing_export_jobs_jobber_date_idx
+    ON pricing_export_jobs(jobber_id, pricing_date DESC);
+  `);
+
+  await query(`
     CREATE INDEX IF NOT EXISTS user_jobber_roles_jobber_idx
     ON user_jobber_roles(jobber_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_store_timestamp_idx
+    ON allied_transactions(store_id, "timestamp" DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_store_id_idx
+    ON allied_transactions(store_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_emv_status_idx
+    ON allied_transactions(emv_status);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_payment_type_idx
+    ON allied_transactions(payment_type);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_fuel_position_idx
+    ON allied_transactions(fuel_position_id);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_card_name_idx
+    ON allied_transactions(card_name);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_denial_reason_idx
+    ON allied_transactions(tag_denial_reason);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_entry_method_idx
+    ON allied_transactions(entry_method);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_transactions_emv_tran_type_idx
+    ON allied_transactions(emv_tran_type);
   `);
 }
 

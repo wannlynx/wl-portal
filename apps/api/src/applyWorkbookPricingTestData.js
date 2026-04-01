@@ -2,7 +2,8 @@ const crypto = require("crypto");
 const fs = require("fs");
 const { query, tx, initDb } = require("./db");
 
-const WORKBOOK_PATH = "C:\\Users\\deepa\\Downloads\\Updated CostCalculator_.xlsx";
+const DEFAULT_WORKBOOK_PATH = "C:\\Users\\deepa\\Downloads\\Updated CostCalculator_.xlsx";
+const WORKBOOK_PATH = process.env.PRICING_WORKBOOK_PATH || DEFAULT_WORKBOOK_PATH;
 
 function id(prefix) {
   return `${prefix}_${crypto.randomBytes(6).toString("hex")}`;
@@ -12,7 +13,10 @@ function centsToDollars(value) {
   return Number((value / 100).toFixed(4));
 }
 
-// Values below are derived from the workbook sections in Updated CostCalculator_.xlsx:
+// Values below are derived from the workbook sections in Updated CostCalculator_.xlsx.
+// The script uses hard-coded extracted values, so the workbook file itself is not required at runtime.
+// PRICING_WORKBOOK_PATH is only used for operator visibility in logs and notes.
+//
 // - SF spot quote ids: SFRCRR / SFRCRP / SFRCN2
 // - RIN / Ethanol quote ids: USARNC / SFR799
 // - Market adders row 33

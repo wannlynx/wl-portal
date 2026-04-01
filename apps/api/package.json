@@ -7,7 +7,9 @@
     "dev": "node src/server.js",
     "start": "node src/server.js",
     "build": "node -e \"console.log('api build: no transpilation needed')\"",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "seed:pricing-workbook": "node src/applyWorkbookPricingTestData.js",
+    "allied:generate": "node src/generateAlliedTransactions.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

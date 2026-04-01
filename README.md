@@ -66,6 +66,35 @@ Services:
 - Web: `http://localhost:5173`
 - API: `http://localhost:4000`
 
+## Customer Pricing Setup
+
+The customer pricing workspace now lives in the repo and can be initialized from a fresh clone.
+
+1. Start with the normal base seed:
+
+```powershell
+$env:DATABASE_URL='postgres://postgres:postgres@localhost:5432/petroleum'
+$env:PGSSL='disable'
+$env:PETROLEUM_SECRET_KEY='your-stable-secret-key'
+npm.cmd run seed
+```
+
+2. Apply the workbook-derived pricing test data:
+
+```powershell
+$env:DATABASE_URL='postgres://postgres:postgres@localhost:5432/petroleum'
+$env:PGSSL='disable'
+$env:PETROLEUM_SECRET_KEY='your-stable-secret-key'
+npm.cmd --workspace apps/api run seed:pricing-workbook
+```
+
+Notes:
+
+- The pricing schema is created by `apps/api/src/db.js` during API startup or seed execution.
+- `apps/api/src/applyWorkbookPricingTestData.js` seeds deterministic pricing snapshots, rules, customer profiles, and taxes.
+- The workbook values are already embedded in the seed script, so another developer does not need your local `C:\Users\deepa\Downloads\Updated CostCalculator_.xlsx` file to run the seed.
+- If needed, `PRICING_WORKBOOK_PATH` can still be set to document which workbook the values came from in logs and seeded notes.
+
 Mandatory verification before sign-off:
 
 - Do not report work as complete until both local services are verified as reachable.
