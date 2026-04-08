@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
+const packageMeta = require("../package.json");
 const { authMiddleware, encodeToken } = require("./auth");
 const { requireAuth, requireSiteAccess, requireRole } = require("./rbac");
 const { registerClient, sendEvent, broadcast } = require("./events");
@@ -2448,7 +2449,13 @@ async function summariesForSiteIds(ids) {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "petroleum-api", dbConfigured: hasDbConfig(), apiVersion: "2026-03-07-tank-info" });
+  res.json({
+    ok: true,
+    service: "petroleum-api",
+    dbConfigured: hasDbConfig(),
+    apiVersion: packageMeta.version || "0.0.0",
+    apiReleaseDate: packageMeta.releaseDate || "Not recorded"
+  });
 });
 
 app.get(
