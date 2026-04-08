@@ -249,7 +249,7 @@ const OPIS_SPOT_PRODUCT_CODES = {
   }
 };
 const OPIS_RACK_MARKETS = [
-  { marketKey: "benicia", terminalKey: "benicia_terminal", aliases: ["BENICIA", "CONCORD"], rackCity: "Concord", spotMarket: "San Francisco" },
+  { marketKey: "benicia", terminalKey: "benicia_terminal", aliases: ["BENICIA", "SAN FRANCISCO", "SANFRANCISCO"], rackCity: "San Francisco", spotMarket: "San Francisco" },
   { marketKey: "stockton", terminalKey: "stockton_terminal", aliases: ["STOCKTON"], rackCity: "Stockton", spotMarket: "San Francisco" },
   { marketKey: "sacramento", terminalKey: "sacramento_terminal", aliases: ["SACRAMENTO"], rackCity: "Sacramento", spotMarket: "San Francisco" },
   { marketKey: "san_jose", terminalKey: "san_jose_terminal", aliases: ["SAN JOSE", "SANJOSE"], rackCity: "San Jose", spotMarket: "San Francisco" }
