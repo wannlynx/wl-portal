@@ -5,6 +5,63 @@ Use this file in a **new Codex agent launched from Administrator PowerShell**.
 ## Goal
 Run `Petroleum` locally when needed, and keep the public deployment state on **Railway** and **Netlify** aligned with the current test/demo dataset.
 
+## Mandatory Final Verification Rule
+- No agent should say work is finished until the relevant local ports are checked again at the end of the task.
+- Minimum checks:
+  - legacy web: `http://localhost:5173`
+  - API health: `http://localhost:4000/health`
+- If the MUI frontend was touched, built, or tested, also check:
+  - MUI web: `http://localhost:5174`
+- The final handoff must state the exact ports checked and what each one returned.
+- Do not rely on an earlier successful check if processes were restarted later in the task.
+
+## Versioning Rule
+- Frontend and API versions are separate and should not be forced to match.
+- The Admin `Version` tab must show:
+  - frontend version
+  - frontend release date and time
+  - API version
+  - API release date and time
+- Replace old `Update Rule` wording with `Information on Changes`.
+- When frontend code changes:
+  - bump `apps/web-mui/package.json`
+  - record both `releaseDate` and `releaseDateTime`
+- When API code changes:
+  - bump `apps/api/package.json`
+  - record both `releaseDate` and `releaseDateTime`
+- Any future handoff should preserve this convention so release metadata stays usable during local and AWS verification.
+
+## MUI Mobile UX Rule
+- For `apps/web-mui`, phone usability is a primary requirement, not a polish pass.
+- On phone, default to `summary -> drill-down` instead of showing summary and detail side-by-side.
+- Do not carry desktop density directly onto phone screens.
+- Prefer:
+  - one compact list of entities first
+  - simple tap targets
+  - a focused detail view after selection
+  - progressive disclosure for advanced fields
+- Avoid:
+  - duplicated data in both summary cards and detail panels on the same phone screen
+  - large always-open filter forms
+  - desktop-style tables as the primary mobile view
+  - forcing the user to scroll through both a detail panel and the full list below it
+- For mobile data cards, show only the most important fields first.
+  - Typical first-line fields: name/label, status, fill %, volume, event
+  - Move lower-priority fields like ullage, safe ullage, capacity, exact timestamps, and secondary metrics into the detail view
+- Use compact filters on phone.
+  - Keep only the most-used controls visible by default
+  - Put lower-priority filters behind a secondary action, drawer, or expandable section
+- Desktop can remain denser with split panes and more simultaneous context, but mobile should optimize for quick scanning with minimal scrolling.
+- When migrating pages, assume layout hierarchy and duplicated data are more likely problems than font size alone.
+- For information-dense analytics like `Allied`, prefer a layered flow:
+  - `Portfolio` selection first
+  - then one focused `Site Analysis` workspace
+  - then one selected transaction/item detail view
+- Do not rebuild dense analytics pages as one long mobile report.
+  - Use tabs or segmented modes like `Overview`, `Issues`, `Pumps`, and `Transactions`
+  - keep advanced filters compact
+  - make KPI cards, issue cards, and pump rows act as drill-down selectors
+
 ## Repo Path
 `C:\Users\deepa\source\repos\Petroleum`
 
@@ -67,6 +124,236 @@ $env:PETROLEUM_SECRET_KEY='your-stable-secret-key'
 - An older extra Railway/Postgres connection was also seen during this session and should **not** be treated as the active app database:
   - `postgresql://postgres:VyfqGzHwTXIgqHNQXNsTpfFxRDnfrbyD@tramway.proxy.rlwy.net:12652/railway`
 - If deleting the duplicate Railway Postgres, keep the `centerbeam.proxy.rlwy.net:23971` database because that is the one the Railway API service is actually using.
+
+### AWS Lightsail Low-Cost Deployment Path
+- AWS CLI was configured locally and validated under:
+  - account: `114354606772`
+  - IAM user: `arn:aws:iam::114354606772:user/ai-agent-coding-deploy`
+- Cost-sensitive AWS direction selected for the next deployment pass:
+  - use a single **Ubuntu Lightsail instance**
+  - keep **PostgreSQL** instead of rewriting the app to DynamoDB
+  - avoid RDS/App Runner/Amplify for the first low-cost production cut unless a stronger managed posture is later required
+- Lightsail instance created:
+  - instance name: `wl-portal-prod`
+  - region: `us-east-1`
+  - availability zone: `us-east-1a`
+  - blueprint: `ubuntu_24_04`
+  - bundle: `nano_3_0`
+  - public IP: `44.222.49.26`
+  - login user: `ubuntu`
+  - SSH key name: `LightsailDefaultKeyPair`
+- Lightsail instance state at handoff:
+  - running
+  - ports `22` and `80` were confirmed open in Lightsail
+  - `443` still needs to be explicitly opened if HTTPS has not already been added after this note
+- Server bootstrap commands already validated on the instance:
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y nginx git curl
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v
+npm -v
+```
+
+- Result of the validated Node install:
+  - Node: `v20.20.2`
+  - npm: `10.8.2`
+- PostgreSQL state on the Lightsail host at this handoff:
+  - `postgresql` and `postgresql-contrib` were installed
+  - local database `petroleum` was created successfully
+  - `psql -lqt` showed:
+    - `petroleum`
+    - `postgres`
+    - `template0`
+    - `template1`
+  - the `postgres` user password was reset at least once during setup, but the final chosen password was not written into this handoff
+- Repo state on the Lightsail host at this handoff:
+  - cloned repo: `https://github.com/wannlynx/wl-portal.git`
+  - working directory: `/home/ubuntu/wl-portal`
+  - checked-out branch: `docs/aws-migration-handoff`
+- Current blocker on the Lightsail host:
+  - `npm install` does **not** complete on the `nano_3_0` instance
+  - the install is being OOM-killed by the kernel on the `0.5 GB RAM` bundle
+  - `npm ls --depth=0` showed unmet workspace dependencies after the interrupted installs
+  - this should be treated as an infrastructure capacity issue first, not a repo/package.json bug
+- Next required Lightsail steps after this handoff:
+  - add swap on the host, then retry `npm install`
+  - if install is still killed, resize the instance one step above `nano_3_0`
+  - once dependencies finish installing:
+    - create the minimal `.env`
+    - run `npm run seed`
+    - run `npm run build`
+    - configure the API process manager
+    - configure Nginx to serve `apps/web-mui/dist` and proxy the API
+- PostgreSQL bootstrap commands prepared for the Lightsail host:
+
+```bash
+sudo apt install -y postgresql postgresql-contrib
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
+sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'CHANGE_THIS_PASSWORD';"
+sudo -u postgres createdb petroleum
+sudo -u postgres psql -lqt
+```
+
+- Repo/bootstrap commands prepared for the Lightsail host:
+
+```bash
+cd /home/ubuntu
+git clone https://github.com/wannlynx/wl-portal.git
+cd wl-portal
+git checkout docs/aws-migration-handoff
+npm install
+```
+
+- Memory-pressure mitigation prepared for the Lightsail host:
+
+```bash
+sudo fallocate -l 3G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+free -h
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+cd /home/ubuntu/wl-portal
+rm -rf node_modules
+npm install
+```
+
+- Minimal first-boot `.env` shape prepared for the Lightsail host:
+
+```bash
+DATABASE_URL=postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/petroleum
+PETROLEUM_SECRET_KEY=CHOOSE_A_STABLE_SECRET_KEY
+WEB_BASE_URL=http://44.222.49.26
+PORT=4000
+```
+
+- Important env note:
+  - use the confirmed values below unless they are intentionally rotated later
+  - if `PETROLEUM_SECRET_KEY` changes, existing encrypted rows in `jobber_secrets` will not decrypt
+  - OPIS/EIA credentials can still be re-entered later after boot if needed
+
+- Confirmed AWS Lightsail credentials and values used during this session:
+  - local PostgreSQL password:
+    - `AWSPassword1!`
+  - current `DATABASE_URL` on the Lightsail host:
+    - `postgresql://postgres:AWSPassword1!@localhost:5432/petroleum`
+  - current `PETROLEUM_SECRET_KEY` on the Lightsail host:
+    - `5fa864e1cc131d6283efe1f275c44b857b3c9d9eb0f77b284c249898b888f828`
+  - current temporary `WEB_BASE_URL` used before final domain cutover:
+    - `http://44.222.49.26`
+  - demo login still present in app data:
+    - `manager@demo.com / demo123`
+  - OPIS fallback credentials found locally and available if re-entry is needed:
+    - `OPIS_USERNAME=ram@xprotean.com`
+    - `OPIS_PASSWORD=wp5MQfPTkvVPST!`
+
+- Database restore state on the Lightsail host:
+  - uploaded backup:
+    - `/home/ubuntu/petroleum-full-2026-04-01.backup`
+  - restore command had to use a newer `pg_restore`
+  - `pg_restore` reported one ignored warning:
+    - `unrecognized configuration parameter "transaction_timeout"`
+  - that warning came from the dump header and did **not** block the restore
+  - after restore, the API started successfully with:
+    - `petroleum-api listening on 4000 (dbReady=true)`
+
+- HTTP validation completed on the Lightsail host:
+  - `curl http://127.0.0.1:4000/health` returned:
+    - `{"ok":true,"service":"petroleum-api","dbConfigured":true,"apiVersion":"2026-03-07-tank-info"}`
+  - `curl -I http://127.0.0.1` returned `200 OK`
+  - `curl -I http://44.222.49.26` returned `200 OK`
+
+- Frontend/API deployment method note for future AWS updates:
+  - do **not** rely on multiline SSH paste for config files or long shell payloads
+  - this terminal wraps pasted lines and corrupts Nginx configs and long commands
+  - preferred update method:
+    - build locally on Windows
+    - upload changed artifacts/config files with `scp`
+    - move them into place on the server
+  - for non-file payloads, use a single-line encoded transport format such as `base64` rather than raw multiline paste
+  - practical examples from this session:
+    - upload built frontend zip with `scp`
+    - upload `wl-portal.nginx.conf` with `scp`
+    - avoid editing `/etc/nginx/...` interactively over wrapped SSH paste
+  - standard deployment workflow going forward:
+    - develop and test locally first
+    - commit and push to GitHub
+    - for frontend changes:
+      - build `apps/web-mui` locally on Windows
+      - package `apps/web-mui/dist` into `web-mui-dist.zip`
+      - upload `web-mui-dist.zip` with `scp`
+      - unzip it into `/home/ubuntu/wl-portal/apps/web-mui/dist`
+    - for config changes:
+      - create or edit the config locally
+      - upload the config file with `scp`
+      - move it into place on the server
+      - validate with `nginx -t` before reload/restart when Nginx is involved
+    - for backend-only source changes:
+      - use `git pull` on the server in `/home/ubuntu/wl-portal`
+      - then restart the API process
+    - do **not** build the frontend on the Lightsail VM unless the instance size changes materially; the current VM is too small for reliable Vite production builds
+
+- Canonical frontend deployment commands from Windows:
+
+```powershell
+cd C:\Users\deepa\source\repos\Petroleum
+npm.cmd --workspace apps/web-mui run build
+Compress-Archive -Path .\apps\web-mui\dist\* -DestinationPath .\web-mui-dist.zip -Force
+scp -i "C:\Users\deepa\.ssh\LightsailDefaultKey-us-east-1.pem" "C:\Users\deepa\source\repos\Petroleum\web-mui-dist.zip" ubuntu@44.222.49.26:/home/ubuntu/
+```
+
+- Canonical frontend deployment commands on the Lightsail host:
+
+```bash
+unzip -o /home/ubuntu/web-mui-dist.zip -d /home/ubuntu/wl-portal/apps/web-mui/dist
+```
+
+- Canonical config deployment pattern:
+
+```powershell
+scp -i "C:\Users\deepa\.ssh\LightsailDefaultKey-us-east-1.pem" "C:\Users\deepa\source\repos\Petroleum\wl-portal.nginx.conf" ubuntu@44.222.49.26:/home/ubuntu/
+```
+
+```bash
+sudo mv /home/ubuntu/wl-portal.nginx.conf /etc/nginx/sites-available/wl-portal
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+- Canonical backend source deployment pattern on the Lightsail host:
+
+```bash
+cd /home/ubuntu/wl-portal
+git pull
+```
+
+- Domain / HTTPS state:
+  - DNS target selected:
+    - `portal.wannlynx.com -> 44.222.49.26`
+  - Let’s Encrypt certificate request succeeded for:
+    - `portal.wannlynx.com`
+  - certificate files created at:
+    - `/etc/letsencrypt/live/portal.wannlynx.com/fullchain.pem`
+    - `/etc/letsencrypt/live/portal.wannlynx.com/privkey.pem`
+  - initial Certbot install step failed because Nginx still had:
+    - `server_name 44.222.49.26;`
+  - next required HTTPS steps if not yet finished after this handoff:
+    - change Nginx `server_name` to `portal.wannlynx.com`
+    - run `sudo certbot install --cert-name portal.wannlynx.com`
+    - choose redirect from HTTP to HTTPS
+    - update `.env`:
+      - `WEB_BASE_URL=https://portal.wannlynx.com`
+    - restart the API process after changing `.env`
+
+- If the low-cost Lightsail path is kept, the intended public architecture becomes:
+  - Nginx on `80/443`
+  - API on local `:4000`
+  - PostgreSQL on local `:5432`
+  - static frontend served from the built `apps/web-mui/dist`
 
 ## What Changed Since The Original Handoff
 ### 1. Pricing tab added between Users and Admin
@@ -424,6 +711,7 @@ npm.cmd --workspace apps/api run seed
 
 ## Expected Local URLs
 - Web: `http://localhost:5173`
+- MUI Web: `http://localhost:5174`
 - API health: `http://localhost:4000/health`
 - Pricing page:
   - `http://localhost:5173/pricing`
@@ -463,6 +751,32 @@ npm.cmd --workspace apps/api run seed
     - add generated pricing run/history/output screens to `Price Tables`
     - then replace freeform canonical market/product/vendor key inputs with controlled dropdowns/selects
     - then continue toward export templates and generated customer output workflows
+- Allied MUI notes:
+  - route is now under `apps/web-mui/src/pages/AlliedPage.jsx`
+  - first pass is intentionally layered instead of copying the full legacy density
+  - current flow is:
+    - portfolio site selection
+    - focused site header and KPI strip
+    - tabbed analysis: `overview`, `issues`, `pumps`, `transactions`
+    - selected transaction detail only after tap/click
+  - if extending this page, preserve phone-first selection and avoid reintroducing always-open desktop-style filter grids
+- Admin MUI notes:
+  - `apps/web-mui/src/pages/AdminPreviewPage.jsx` is no longer just a placeholder
+  - first MUI admin slice is jobber-first:
+    - `overview`
+    - `branding`
+    - `credentials`
+    - `pricing`
+  - current scope is:
+    - jobber branding edit
+    - OPIS credential save
+    - EIA key save
+    - read-only pricing config status
+  - do not jump straight from this into the full legacy station editor inside MUI
+  - if extending Admin next, keep the same pattern:
+    - summary/status first
+    - write forms below
+    - one admin task at a time on phone
 - OPIS page notes:
   - current live market route is `GET /market/opis`
   - it requires valid OPIS credentials from env or encrypted jobber storage

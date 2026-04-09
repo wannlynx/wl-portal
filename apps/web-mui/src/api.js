@@ -96,6 +96,7 @@ function normalizeCredentialStatus(payload) {
 }
 
 export const api = {
+  getApiHealth: () => request("/health"),
   getSessionUser: () => request("/auth/me"),
   getCurrentJobber: () => request("/jobber"),
   getAlerts: (params = {}) => {

@@ -143,6 +143,7 @@ async function initDb() {
       slug TEXT UNIQUE NOT NULL,
       oauth_domain TEXT NOT NULL DEFAULT '',
       logo_url TEXT NOT NULL DEFAULT '',
+      tank_limits_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL
     );
@@ -586,6 +587,11 @@ async function initDb() {
   await query(`
     ALTER TABLE jobbers
     ADD COLUMN IF NOT EXISTS logo_url TEXT NOT NULL DEFAULT '';
+  `);
+
+  await query(`
+    ALTER TABLE jobbers
+    ADD COLUMN IF NOT EXISTS tank_limits_json JSONB NOT NULL DEFAULT '{}'::jsonb;
   `);
 
   await query(`

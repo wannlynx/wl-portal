@@ -37,6 +37,7 @@ import { api } from "../api";
 import { SiteMap } from "../components/SiteMap";
 import ReactECharts from "echarts-for-react";
 import { SiteAlertsDialog } from "../components/SiteAlertsDialog";
+import { gaugeColorStops } from "../tankLimits";
 
 const FILTERS = {
   all: "all",
@@ -124,7 +125,7 @@ function formatVolume(value) {
   return `${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} Gal`;
 }
 
-function buildTankGaugeOption(fillPercent) {
+function buildTankGaugeOption(fillPercent, tankLimits, product) {
   const safeValue = Math.max(0, Math.min(100, Number(fillPercent) || 0));
   return {
     animation: false,
@@ -140,11 +141,7 @@ function buildTankGaugeOption(fillPercent) {
         axisLine: {
           lineStyle: {
             width: 14,
-            color: [
-              [0.15, "#d14343"],
-              [0.35, "#c77700"],
-              [1, "#2e7d32"]
-            ]
+            color: gaugeColorStops(tankLimits, product)
           }
         },
         pointer: {
@@ -260,7 +257,7 @@ function AlertBadge({ type, count, onClick }) {
   );
 }
 
-export function DashboardPage() {
+export function DashboardPage({ jobber }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [sites, setSites] = useState([]);
@@ -556,7 +553,7 @@ export function DashboardPage() {
                                 {isMobile ? (
                                   <Stack direction="row" alignItems="center" spacing={1} sx={{ pl: 0 }}>
                                     <Box sx={{ height: 84, width: 120, ml: -1, flexShrink: 0 }}>
-                                      <ReactECharts option={buildTankGaugeOption(tank.fillPercent ?? tank.currentFillPercent ?? 0)} style={{ height: "100%", width: "100%" }} opts={{ renderer: "svg" }} />
+                                      <ReactECharts option={buildTankGaugeOption(tank.fillPercent ?? tank.currentFillPercent ?? 0, jobber?.tankLimits, tank.product)} style={{ height: "100%", width: "100%" }} opts={{ renderer: "svg" }} />
                                     </Box>
                                     <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
                                       {formatVolume(tank.currentVolumeLiters ?? tank.fuelVolumeLiters ?? tank.inventoryVolumeLiters ?? 0)} left
@@ -565,7 +562,7 @@ export function DashboardPage() {
                                 ) : (
                                   <>
                                     <Box sx={{ height: 120 }}>
-                                      <ReactECharts option={buildTankGaugeOption(tank.fillPercent ?? tank.currentFillPercent ?? 0)} style={{ height: "100%", width: "100%" }} opts={{ renderer: "svg" }} />
+                                      <ReactECharts option={buildTankGaugeOption(tank.fillPercent ?? tank.currentFillPercent ?? 0, jobber?.tankLimits, tank.product)} style={{ height: "100%", width: "100%" }} opts={{ renderer: "svg" }} />
                                     </Box>
                                     <Typography variant="body2" color="text.secondary">
                                       {formatVolume(tank.currentVolumeLiters ?? tank.fuelVolumeLiters ?? tank.inventoryVolumeLiters ?? 0)} left

@@ -1,7 +1,8 @@
 {
   "name": "petroleum-web-mui",
-  "version": "2.3.3",
+  "version": "2.3.5",
   "releaseDate": "2026-04-08",
+  "releaseDateTime": "2026-04-09T11:24:57-04:00",
   "private": true,
   "type": "module",
   "scripts": {

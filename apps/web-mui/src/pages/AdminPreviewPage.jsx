@@ -24,6 +24,7 @@ import {
 } from "@mui/material";
 import { api } from "../api";
 import packageMeta from "../../package.json";
+import { normalizeTankLimits, TANK_LIMIT_FAMILIES } from "../tankLimits";
 
 const EMPTY_BRANDING = { name: "", logoUrl: "" };
 const EMPTY_OPIS = { username: "", password: "" };
@@ -43,7 +44,7 @@ const EMPTY_CUSTOMER = { name: "", addressLine1: "", addressLine2: "", city: "",
 const EMPTY_PROFILE = { effectiveStart: "", effectiveEnd: "", freightMiles: "", freightCostGas: "", freightCostDiesel: "", rackMarginGas: "", rackMarginDiesel: "", discountRegular: "", discountMid: "", discountPremium: "", discountDiesel: "", branch: "unbranded", marketKey: "", terminalKey: "", distributionLabel: "", gasPrepay: "", dieselPrepay: "", storageFee: "", gasFedExcise: "", gasStateExcise: "", dieselFedExcise: "", dieselStateExcise: "", gasSalesTaxRate: "", dieselSalesTaxRate: "", gasRetailMargin: "", dieselRetailMargin: "", extraRulesJson: "{}" };
 const EMPTY_RULE = { name: "", productFamily: "regular", effectiveStart: "", effectiveEnd: "", status: "draft", versionLabel: "", notes: "" };
 const EMPTY_VENDOR_SET = { selectionMode: "lowest", productFamily: "regular", marketKey: "", basisMode: "match_rule_vendor", vendorsCsv: "" };
-const TABS = ["overview", "users", "branding", "credentials", "profiles", "rules", "pricing", "version"];
+const TABS = ["overview", "users", "branding", "credentials", "profiles", "rules", "tank-limits", "pricing", "version"];
   const VENDOR_SET_HELP_LINES = [
     { label: "selectionMode", description: "lowest: use the lowest available rack vendor from the selected vendor list; highest: use the highest available vendor; first_available: use the first vendor row found; specific_vendor: effectively constrain to the listed vendor(s), usually one." },
     { label: "basisMode", description: "Use Selected Rack Value: the Rack Basis card shows the exact rack value the rule selected, so it matches Lowest Rack Input. Use Rack Comparison Average: the Rack Basis card shows the broader comparison rack value for the market instead, which may differ from Lowest Rack Input." },
@@ -66,6 +67,7 @@ function prettyJson(value) {
 
 function adminTabLabel(value) {
   if (value === "profiles") return "terminals";
+  if (value === "tank-limits") return "tank limits";
   if (value === "version") return "version";
   return value;
 }
@@ -196,11 +198,18 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
+  const [savingTankLimits, setSavingTankLimits] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [apiHealth, setApiHealth] = useState(null);
+  const [tankLimitsForm, setTankLimitsForm] = useState(() => normalizeTankLimits(jobber?.tankLimits));
   const isPhone = typeof window !== "undefined" ? window.matchMedia("(max-width: 899.95px)").matches : false;
   const appVersion = packageMeta.version || "0.0.0";
   const appReleaseDate = packageMeta.releaseDate || "Not recorded";
+  const appReleaseDateTime = packageMeta.releaseDateTime || appReleaseDate;
+  const apiVersion = apiHealth?.apiVersion || "Unavailable";
+  const apiReleaseDate = apiHealth?.apiReleaseDate || "Not recorded";
+  const apiReleaseDateTime = apiHealth?.apiReleaseDateTime || apiReleaseDate;
 
   const canManage = user?.jobberRole === "admin" || user?.role === "system_manager";
 
@@ -209,6 +218,7 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
       name: jobber?.name || "",
       logoUrl: jobber?.logoUrl || ""
     });
+    setTankLimitsForm(normalizeTankLimits(jobber?.tankLimits));
   }, [jobber]);
 
   useEffect(() => {
@@ -268,6 +278,12 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
           if (!ignore) setManagementOverview(nextManagementOverview);
         } catch (_nextManagementError) {
           if (!ignore) setManagementOverview(null);
+        }
+        try {
+          const nextApiHealth = await api.getApiHealth();
+          if (!ignore) setApiHealth(nextApiHealth);
+        } catch (_nextHealthError) {
+          if (!ignore) setApiHealth(null);
         }
         const loadIssues = [];
         if (opisResult.status === "rejected") loadIssues.push("OPIS status");
@@ -466,6 +482,33 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
         };
       })
     );
+  }
+
+  function updateTankLimit(familyKey, field, value) {
+    setTankLimitsForm((current) => ({
+      ...current,
+      [familyKey]: {
+        ...current[familyKey],
+        [field]: value
+      }
+    }));
+  }
+
+  async function saveTankLimitsWorkspace() {
+    setSavingTankLimits(true);
+    setError("");
+    setMessage("");
+    try {
+      const normalized = normalizeTankLimits(tankLimitsForm);
+      const updated = await api.updateCurrentJobber({ tankLimits: normalized });
+      setTankLimitsForm(normalizeTankLimits(updated?.tankLimits));
+      onJobberUpdated?.(updated);
+      setMessage("Tank limits saved for this jobber.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError || "Unable to save tank limits"));
+    } finally {
+      setSavingTankLimits(false);
+    }
   }
 
   function onLogoFileSelected(file) {
@@ -1972,29 +2015,131 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
         </Stack>
       ) : null}
 
+      {!showFocusedMobileTask && tab === "tank-limits" ? (
+        <Stack spacing={2.5}>
+          <Section title="Tank Limits" subtitle="Set grade-specific percent bands for low red, low yellow, high yellow, and high red. Tank gauges use these values for color.">
+            <Stack spacing={2}>
+              <Alert severity="info">
+                Red applies when a tank is too low or too high. Yellow is the warning band on either side. Green is the middle operating range.
+              </Alert>
+              <Grid container spacing={1.5}>
+                {TANK_LIMIT_FAMILIES.map((family) => (
+                  <Grid key={family.key} size={{ xs: 12, lg: 6 }}>
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <Stack spacing={1.5}>
+                        <Typography variant="subtitle1" fontWeight={700}>{family.label}</Typography>
+                        <Grid container spacing={1.5}>
+                          <Grid size={{ xs: 6, md: 3 }}>
+                            <TextField
+                              label="Low Red Max"
+                              type="number"
+                              value={tankLimitsForm[family.key]?.lowRedMax ?? ""}
+                              onChange={(event) => updateTankLimit(family.key, "lowRedMax", event.target.value)}
+                              fullWidth
+                              disabled={savingTankLimits}
+                              sx={{
+                                "& .MuiOutlinedInput-root": {
+                                  background: "linear-gradient(90deg, rgba(209,67,67,0.28) 0%, rgba(209,67,67,0.24) 44%, rgba(199,119,0,0.2) 56%, rgba(199,119,0,0.24) 100%)"
+                                }
+                              }}
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 6, md: 3 }}>
+                            <TextField
+                              label="Low Yellow Max"
+                              type="number"
+                              value={tankLimitsForm[family.key]?.lowYellowMax ?? ""}
+                              onChange={(event) => updateTankLimit(family.key, "lowYellowMax", event.target.value)}
+                              fullWidth
+                              disabled={savingTankLimits}
+                              sx={{
+                                "& .MuiOutlinedInput-root": {
+                                  background: "linear-gradient(90deg, rgba(199,119,0,0.28) 0%, rgba(199,119,0,0.22) 44%, rgba(46,125,50,0.18) 56%, rgba(46,125,50,0.22) 100%)"
+                                }
+                              }}
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 6, md: 3 }}>
+                            <TextField
+                              label="High Yellow Min"
+                              type="number"
+                              value={tankLimitsForm[family.key]?.highYellowMin ?? ""}
+                              onChange={(event) => updateTankLimit(family.key, "highYellowMin", event.target.value)}
+                              fullWidth
+                              disabled={savingTankLimits}
+                              sx={{
+                                "& .MuiOutlinedInput-root": {
+                                  background: "linear-gradient(90deg, rgba(46,125,50,0.22) 0%, rgba(46,125,50,0.18) 44%, rgba(199,119,0,0.22) 56%, rgba(199,119,0,0.28) 100%)"
+                                }
+                              }}
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 6, md: 3 }}>
+                            <TextField
+                              label="High Red Min"
+                              type="number"
+                              value={tankLimitsForm[family.key]?.highRedMin ?? ""}
+                              onChange={(event) => updateTankLimit(family.key, "highRedMin", event.target.value)}
+                              fullWidth
+                              disabled={savingTankLimits}
+                              sx={{
+                                "& .MuiOutlinedInput-root": {
+                                  background: "linear-gradient(90deg, rgba(199,119,0,0.24) 0%, rgba(199,119,0,0.2) 44%, rgba(209,67,67,0.22) 56%, rgba(209,67,67,0.28) 100%)"
+                                }
+                              }}
+                            />
+                          </Grid>
+                        </Grid>
+                        <Typography variant="caption" color="text.secondary">
+                          Green range: {tankLimitsForm[family.key]?.lowYellowMax}% to {tankLimitsForm[family.key]?.highYellowMin}%.
+                        </Typography>
+                      </Stack>
+                    </Paper>
+                  </Grid>
+                ))}
+              </Grid>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
+                <Button variant="contained" onClick={saveTankLimitsWorkspace} disabled={savingTankLimits}>
+                  Save Tank Limits
+                </Button>
+              </Stack>
+            </Stack>
+          </Section>
+        </Stack>
+      ) : null}
+
       {!showFocusedMobileTask && tab === "version" ? (
         <Stack spacing={2.5}>
-          <Section title="Version" subtitle="Current MUI admin release metadata.">
+          <Section title="Version" subtitle="Current frontend and API release metadata for this deployment.">
             <Grid container spacing={1.5}>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <SummaryCard label="Current Version" value={appVersion} caption="Version is based on the latest GitHub release line, then bumped for each shipped UI change." />
+              <Grid size={{ xs: 12, md: 3 }}>
+                <SummaryCard label="Frontend Version" value={appVersion} caption="This value comes from apps/web-mui/package.json and changes only for frontend work." />
               </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <SummaryCard label="Release Date" value={appReleaseDate} caption="Update this date whenever the version changes." />
+              <Grid size={{ xs: 12, md: 3 }}>
+                <SummaryCard label="Frontend Release" value={formatDateTime(appReleaseDateTime)} caption={`Recorded date: ${appReleaseDate}`} />
               </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <SummaryCard label="Release Source" value="GitHub tag v2.0 baseline" caption="Displayed version is stored in apps/web-mui/package.json." />
+              <Grid size={{ xs: 12, md: 3 }}>
+                <SummaryCard label="API Version" value={apiVersion} caption="This value comes from apps/api/package.json and must change for every API edit." />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <SummaryCard label="API Release" value={formatDateTime(apiReleaseDateTime)} caption={`Recorded date: ${apiReleaseDate}`} />
               </Grid>
             </Grid>
           </Section>
 
-          <Section title="Update Rule" subtitle="Keep versioning simple and consistent.">
+          <Section title="Information on Changes" subtitle="Versioning and release notes must stay explicit and separate.">
             <Stack spacing={1}>
               <Typography variant="body2" color="text.secondary">
-                For each MUI release, bump the minor version in <strong>apps/web-mui/package.json</strong> and update the release date in the same edit.
+                Frontend and API versions are tracked independently. Do not force them to match.
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Current release: version {appVersion} on {appReleaseDate}.
+                For frontend edits, update <strong>apps/web-mui/package.json</strong> with a new frontend version plus both the release date and release time.
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                For API edits, update <strong>apps/api/package.json</strong> with a new API version plus both the release date and release time.
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Current release info: frontend {appVersion} at {formatDateTime(appReleaseDateTime)}. API {apiVersion} at {formatDateTime(apiReleaseDateTime)}.
               </Typography>
             </Stack>
           </Section>

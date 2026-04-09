@@ -214,10 +214,10 @@ function ProtectedApp({ user, jobber, onLogout, onJobberUpdated }) {
     <AppErrorBoundary>
       <PageShell user={user} jobber={jobber} onLogout={onLogout}>
         <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/sites" element={<SitesPage />} />
-          <Route path="/tank-information" element={<TankInformationPage />} />
-          <Route path="/tank-charts" element={<TankChartsPage />} />
+          <Route path="/" element={<DashboardPage jobber={jobber} />} />
+          <Route path="/sites" element={<SitesPage jobber={jobber} />} />
+          <Route path="/tank-information" element={<TankInformationPage jobber={jobber} />} />
+          <Route path="/tank-charts" element={<TankChartsPage jobber={jobber} />} />
           <Route path="/allied" element={<AlliedPage />} />
           <Route path="/pricing" element={<PricingPreviewPage />} />
           <Route path="/price-tables" element={<PriceTablesPage />} />

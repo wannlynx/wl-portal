@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Alert,
+  Autocomplete,
   Collapse,
   Box,
   Button,
@@ -10,12 +11,8 @@ import {
   CardContent,
   Chip,
   CircularProgress,
-  FormControl,
   Grid,
-  InputLabel,
   LinearProgress,
-  MenuItem,
-  Select,
   Stack,
   Switch,
   Table,
@@ -24,6 +21,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Typography,
   useMediaQuery
 } from "@mui/material";
@@ -34,6 +32,7 @@ import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import { api } from "../api";
+import { tankLevelTone } from "../tankLimits";
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -171,12 +170,9 @@ function buildReportHtml({ title, generatedAt, scopeLabel, reportRows }) {
     </html>`;
 }
 
-function MobileTankCard({ row, selected, onClick }) {
+function MobileTankCard({ row, selected, onClick, tankLimits }) {
   const fillPercent = Number(row.fillPercent || 0);
-  const progressColor =
-    fillPercent >= 80 || fillPercent <= 10 ? "error" :
-    fillPercent >= 15 ? "success" :
-    "warning";
+  const progressColor = tankLevelTone(fillPercent, tankLimits, row.product);
 
   return (
     <Card
@@ -304,7 +300,7 @@ function TankDetailPanel({ row }) {
   );
 }
 
-export function TankInformationPage() {
+export function TankInformationPage({ jobber }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
@@ -327,6 +323,12 @@ export function TankInformationPage() {
     range: "5d",
     refillOnly: false
   });
+  const productOptions = ["Regular", "Premium", "Diesel", "DEF", "Unknown"];
+  const rangeOptions = [
+    { value: "24h", label: "Last 24 Hours" },
+    { value: "3d", label: "Last 3 Days" },
+    { value: "5d", label: "Last 5 Days" }
+  ];
 
   useEffect(() => {
     api.getSites().then(setSites).catch((err) => setError(err.message));
@@ -542,70 +544,56 @@ export function TankInformationPage() {
                 <Collapse in={mobileFiltersOpen}>
                   <Grid container spacing={1.5}>
                     <Grid size={12}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Store</InputLabel>
-                        <Select
-                          value={filters.siteId}
-                          label="Store"
-                          onChange={(event) => setFilters((current) => ({ ...current, siteId: event.target.value, tankId: "" }))}
-                        >
-                          <MenuItem value="">All Stores</MenuItem>
-                          {sites.map((site) => (
-                            <MenuItem key={site.id} value={site.id}>{site.siteCode} - {site.name}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
+                      <Autocomplete
+                        size="small"
+                        options={sites}
+                        value={sites.find((site) => site.id === filters.siteId) || null}
+                        onChange={(_event, nextSite) => setFilters((current) => ({ ...current, siteId: nextSite?.id || "", tankId: "" }))}
+                        getOptionLabel={(option) => `${option.siteCode} - ${option.name}`}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                        renderInput={(params) => <TextField {...params} label="Store" placeholder="Type a store" />}
+                        clearOnEscape
+                      />
                     </Grid>
                     <Grid size={12}>
-                      <FormControl fullWidth size="small" disabled={!filters.siteId}>
-                        <InputLabel>Tank</InputLabel>
-                        <Select
-                          value={filters.tankId}
-                          label="Tank"
-                          onChange={(event) => {
-                            const nextTankId = event.target.value;
-                            setFilters((current) => ({ ...current, tankId: nextTankId }));
-                            setDetailTankId(nextTankId);
-                            setMobileView(nextTankId ? "detail" : "list");
-                          }}
-                        >
-                          <MenuItem value="">All Tanks</MenuItem>
-                          {siteAssets.tanks.map((tank) => (
-                            <MenuItem key={tank.id} value={tank.id}>Tank {tank.atgTankId}: {tank.label}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
+                      <Autocomplete
+                        size="small"
+                        disabled={!filters.siteId}
+                        options={siteAssets.tanks}
+                        value={siteAssets.tanks.find((tank) => tank.id === filters.tankId) || null}
+                        onChange={(_event, nextTank) => {
+                          const nextTankId = nextTank?.id || "";
+                          setFilters((current) => ({ ...current, tankId: nextTankId }));
+                          setDetailTankId(nextTankId);
+                          setMobileView(nextTankId ? "detail" : "list");
+                        }}
+                        getOptionLabel={(option) => `Tank ${option.atgTankId}: ${option.label}`}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                        renderInput={(params) => <TextField {...params} label="Tank" placeholder="Type a tank" />}
+                        clearOnEscape
+                      />
                     </Grid>
                     <Grid size={6}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Product</InputLabel>
-                        <Select
-                          value={filters.product}
-                          label="Product"
-                          onChange={(event) => setFilters((current) => ({ ...current, product: event.target.value }))}
-                        >
-                          <MenuItem value="">All Products</MenuItem>
-                          <MenuItem value="Regular">Regular</MenuItem>
-                          <MenuItem value="Premium">Premium</MenuItem>
-                          <MenuItem value="Diesel">Diesel</MenuItem>
-                          <MenuItem value="DEF">DEF</MenuItem>
-                          <MenuItem value="Unknown">Unknown</MenuItem>
-                        </Select>
-                      </FormControl>
+                      <Autocomplete
+                        size="small"
+                        options={productOptions}
+                        value={filters.product || null}
+                        onChange={(_event, nextProduct) => setFilters((current) => ({ ...current, product: nextProduct || "" }))}
+                        renderInput={(params) => <TextField {...params} label="Product" placeholder="Type a product" />}
+                        clearOnEscape
+                      />
                     </Grid>
                     <Grid size={6}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Range</InputLabel>
-                        <Select
-                          value={filters.range}
-                          label="Range"
-                          onChange={(event) => setFilters((current) => ({ ...current, range: event.target.value }))}
-                        >
-                          <MenuItem value="24h">Last 24 Hours</MenuItem>
-                          <MenuItem value="3d">Last 3 Days</MenuItem>
-                          <MenuItem value="5d">Last 5 Days</MenuItem>
-                        </Select>
-                      </FormControl>
+                      <Autocomplete
+                        size="small"
+                        options={rangeOptions}
+                        value={rangeOptions.find((option) => option.value === filters.range) || null}
+                        onChange={(_event, nextRange) => setFilters((current) => ({ ...current, range: nextRange?.value || "5d" }))}
+                        getOptionLabel={(option) => option.label}
+                        isOptionEqualToValue={(option, value) => option.value === value.value}
+                        renderInput={(params) => <TextField {...params} label="Range" placeholder="Type a range" />}
+                        disableClearable
+                      />
                     </Grid>
                     <Grid size={12}>
                       <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 40 }}>
@@ -621,70 +609,56 @@ export function TankInformationPage() {
               </Stack>
             ) : (
               <Grid container spacing={1.5}>
-                <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Store</InputLabel>
-                  <Select
-                    value={filters.siteId}
-                    label="Store"
-                    onChange={(event) => setFilters((current) => ({ ...current, siteId: event.target.value, tankId: "" }))}
-                  >
-                    <MenuItem value="">All Stores</MenuItem>
-                    {sites.map((site) => (
-                      <MenuItem key={site.id} value={site.id}>{site.siteCode} - {site.name}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+                <Autocomplete
+                  size="small"
+                  options={sites}
+                  value={sites.find((site) => site.id === filters.siteId) || null}
+                  onChange={(_event, nextSite) => setFilters((current) => ({ ...current, siteId: nextSite?.id || "", tankId: "" }))}
+                  getOptionLabel={(option) => `${option.siteCode} - ${option.name}`}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  renderInput={(params) => <TextField {...params} label="Store" placeholder="Type a store" />}
+                  clearOnEscape
+                />
               </Grid>
               <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <FormControl fullWidth size="small" disabled={!filters.siteId}>
-                  <InputLabel>Tank</InputLabel>
-                  <Select
-                    value={filters.tankId}
-                    label="Tank"
-                    onChange={(event) => {
-                      const nextTankId = event.target.value;
-                      setFilters((current) => ({ ...current, tankId: nextTankId }));
-                      setDetailTankId(nextTankId);
-                    }}
-                  >
-                    <MenuItem value="">All Tanks</MenuItem>
-                    {siteAssets.tanks.map((tank) => (
-                      <MenuItem key={tank.id} value={tank.id}>Tank {tank.atgTankId}: {tank.label}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Autocomplete
+                  size="small"
+                  disabled={!filters.siteId}
+                  options={siteAssets.tanks}
+                  value={siteAssets.tanks.find((tank) => tank.id === filters.tankId) || null}
+                  onChange={(_event, nextTank) => {
+                    const nextTankId = nextTank?.id || "";
+                    setFilters((current) => ({ ...current, tankId: nextTankId }));
+                    setDetailTankId(nextTankId);
+                  }}
+                  getOptionLabel={(option) => `Tank ${option.atgTankId}: ${option.label}`}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  renderInput={(params) => <TextField {...params} label="Tank" placeholder="Type a tank" />}
+                  clearOnEscape
+                />
               </Grid>
               <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Product</InputLabel>
-                  <Select
-                    value={filters.product}
-                    label="Product"
-                    onChange={(event) => setFilters((current) => ({ ...current, product: event.target.value }))}
-                  >
-                    <MenuItem value="">All Products</MenuItem>
-                    <MenuItem value="Regular">Regular</MenuItem>
-                    <MenuItem value="Premium">Premium</MenuItem>
-                    <MenuItem value="Diesel">Diesel</MenuItem>
-                    <MenuItem value="DEF">DEF</MenuItem>
-                    <MenuItem value="Unknown">Unknown</MenuItem>
-                  </Select>
-                </FormControl>
+                <Autocomplete
+                  size="small"
+                  options={productOptions}
+                  value={filters.product || null}
+                  onChange={(_event, nextProduct) => setFilters((current) => ({ ...current, product: nextProduct || "" }))}
+                  renderInput={(params) => <TextField {...params} label="Product" placeholder="Type a product" />}
+                  clearOnEscape
+                />
               </Grid>
               <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Range</InputLabel>
-                  <Select
-                    value={filters.range}
-                    label="Range"
-                    onChange={(event) => setFilters((current) => ({ ...current, range: event.target.value }))}
-                  >
-                    <MenuItem value="24h">Last 24 Hours</MenuItem>
-                    <MenuItem value="3d">Last 3 Days</MenuItem>
-                    <MenuItem value="5d">Last 5 Days</MenuItem>
-                  </Select>
-                </FormControl>
+                <Autocomplete
+                  size="small"
+                  options={rangeOptions}
+                  value={rangeOptions.find((option) => option.value === filters.range) || null}
+                  onChange={(_event, nextRange) => setFilters((current) => ({ ...current, range: nextRange?.value || "5d" }))}
+                  getOptionLabel={(option) => option.label}
+                  isOptionEqualToValue={(option, value) => option.value === value.value}
+                  renderInput={(params) => <TextField {...params} label="Range" placeholder="Type a range" />}
+                  disableClearable
+                />
               </Grid>
               <Grid size={{ xs: 12, lg: 2 }}>
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%", minHeight: 40 }}>
@@ -732,6 +706,7 @@ export function TankInformationPage() {
                   key={`${row.tankId}-${row.readAt}`}
                   row={row}
                   selected={detailRow?.tankId === row.tankId}
+                  tankLimits={jobber?.tankLimits}
                   onClick={() => {
                     setDetailTankId(row.tankId);
                     setMobileView("detail");

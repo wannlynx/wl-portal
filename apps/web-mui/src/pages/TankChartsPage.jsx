@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import {
   Alert,
+  Autocomplete,
   Button,
   Card,
   CardActionArea,
@@ -9,13 +10,10 @@ import {
   Chip,
   Collapse,
   CircularProgress,
-  FormControl,
   Grid,
-  InputLabel,
   LinearProgress,
-  MenuItem,
-  Select,
   Stack,
+  TextField,
   Typography,
   useMediaQuery
 } from "@mui/material";
@@ -27,12 +25,13 @@ import FilterListIcon from "@mui/icons-material/FilterList";
 import TableRowsIcon from "@mui/icons-material/TableRows";
 import { api } from "../api";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { gaugeBandRanges, gaugeColorStops, tankLevelTone } from "../tankLimits";
 
 const rangeOptions = [
-  { value: "12h", label: "12 Hours", hours: 12 },
   { value: "24h", label: "24 Hours", hours: 24 },
-  { value: "48h", label: "48 Hours", hours: 48 },
-  { value: "72h", label: "3 Days", hours: 72 }
+  { value: "3d", label: "3 Days", hours: 72 },
+  { value: "7d", label: "7 Days", hours: 168 },
+  { value: "30d", label: "30 Days", hours: 720 }
 ];
 
 function buildRangeStart(anchorIso, range) {
@@ -63,11 +62,10 @@ function buildYAxisTicks(minValue, maxValue) {
   return ticks.length ? ticks : [0, 50, 100];
 }
 
-function buildGaugeOption(value) {
+function buildGaugeOption(value, tankLimits, product) {
   const safeValue = Math.max(0, Math.min(100, Number(value) || 0));
   return {
-    animationDuration: 700,
-    animationEasing: "cubicOut",
+    animation: false,
     series: [
       {
         type: "gauge",
@@ -75,76 +73,54 @@ function buildGaugeOption(value) {
         endAngle: -25,
         min: 0,
         max: 100,
-        splitNumber: 10,
-        center: ["50%", "66%"],
-        radius: "92%",
+        center: ["50%", "63%"],
+        radius: "96%",
         axisLine: {
           lineStyle: {
-            width: 18,
-            color: [
-              [0.1, "#c84232"],
-              [0.15, "#d6a63f"],
-              [0.8, "#4c9a63"],
-              [0.9, "#d6a63f"],
-              [1, "#c84232"]
-            ]
+            width: 30,
+            color: gaugeColorStops(tankLimits, product)
           }
         },
         pointer: {
-          length: "72%",
-          width: 7,
+          length: "68%",
+          width: 5,
           itemStyle: { color: "#0b5fff" }
         },
         anchor: {
           show: true,
-          size: 14,
+          size: 10,
           itemStyle: {
             color: "#173447",
-            borderColor: "#f7fbff",
-            borderWidth: 3
+            borderColor: "#ffffff",
+            borderWidth: 2
           }
         },
-        axisTick: {
-          distance: -19,
-          splitNumber: 4,
-          lineStyle: { width: 2, color: "#5a7689" }
-        },
-        splitLine: {
-          distance: -20,
-          length: 18,
-          lineStyle: { width: 4, color: "#29465a" }
-        },
-        axisLabel: {
-          distance: 10,
-          color: "#59758a",
-          fontSize: 12,
-          formatter(valueLabel) {
-            if (valueLabel === 0) return "E";
-            if (valueLabel === 50) return "1/2";
-            if (valueLabel === 100) return "F";
-            return "";
-          }
-        },
+        axisTick: { show: false },
+        splitLine: { show: false },
+        axisLabel: { show: false },
         detail: {
-          valueAnimation: true,
-          offsetCenter: [0, "48%"],
-          fontSize: 24,
+          valueAnimation: false,
+          offsetCenter: [0, "30%"],
+          fontSize: 15,
           fontWeight: 700,
           color: "#173447",
           formatter: "{value}%"
         },
         title: {
-          offsetCenter: [0, "66%"],
+          offsetCenter: [0, "44%"],
           color: "#59758a",
-          fontSize: 11
+          fontSize: 9
         },
-        data: [{ value: Number(safeValue.toFixed(1)), name: "Current fill" }]
+        data: [{ value: Number(safeValue.toFixed(1)), name: "fill" }]
       }
     ]
   };
 }
 
-function buildTrendOption(tank, minValue, maxValue, yTicks) {
+function buildTrendOption(tank, minValue, maxValue, yTicks, tankLimits) {
+  const ranges = gaugeBandRanges(tankLimits, tank.product);
+  const trendLineColor = "rgba(74, 108, 140, 0.92)";
+  const trendPointBorder = "rgba(74, 108, 140, 0.92)";
   return {
     animationDuration: 700,
     grid: { top: 22, right: 22, bottom: 42, left: 56 },
@@ -184,7 +160,7 @@ function buildTrendOption(tank, minValue, maxValue, yTicks) {
       axisLabel: {
         color: "#59758a",
         formatter(valueLabel) {
-          return `${valueLabel}%`;
+          return `${Math.round(Number(valueLabel) || 0)}%`;
         }
       },
       axisLine: { show: false },
@@ -198,10 +174,10 @@ function buildTrendOption(tank, minValue, maxValue, yTicks) {
         symbol: "circle",
         symbolSize: 7,
         showSymbol: tank.points.length <= 20,
-        lineStyle: { width: 4, color: "#0b5fff" },
+        lineStyle: { width: 4, color: trendLineColor },
         itemStyle: {
           color: "#ffffff",
-          borderColor: "#0b5fff",
+          borderColor: trendPointBorder,
           borderWidth: 2
         },
         areaStyle: {
@@ -212,21 +188,15 @@ function buildTrendOption(tank, minValue, maxValue, yTicks) {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: "rgba(11, 95, 255, 0.26)" },
-              { offset: 1, color: "rgba(11, 95, 255, 0.03)" }
+              { offset: 0, color: "rgba(121, 148, 176, 0.26)" },
+              { offset: 1, color: "rgba(121, 148, 176, 0.05)" }
             ]
           }
         },
         markArea: {
           silent: true,
-          itemStyle: { opacity: 0.08 },
-          data: [
-            [{ yAxis: 0, itemStyle: { color: "#c84232" } }, { yAxis: 10 }],
-            [{ yAxis: 10, itemStyle: { color: "#d6a63f" } }, { yAxis: 15 }],
-            [{ yAxis: 15, itemStyle: { color: "#4c9a63" } }, { yAxis: 80 }],
-            [{ yAxis: 80, itemStyle: { color: "#d6a63f" } }, { yAxis: 90 }],
-            [{ yAxis: 90, itemStyle: { color: "#c84232" } }, { yAxis: 100 }]
-          ]
+          itemStyle: { opacity: 0.12 },
+          data: ranges.map((range) => [{ yAxis: range.start, itemStyle: { color: range.color } }, { yAxis: range.end }])
         },
         data: tank.points.map((point) => ({
           value: Number(point.fillPercent.toFixed(2)),
@@ -239,13 +209,10 @@ function buildTrendOption(tank, minValue, maxValue, yTicks) {
   };
 }
 
-function MobileTankSelectorCard({ tank, selected, onClick }) {
+function MobileTankSelectorCard({ tank, selected, onClick, tankLimits }) {
   const latest = tank.points[tank.points.length - 1];
   const fillPercent = latest?.fillPercent || 0;
-  const progressColor =
-    fillPercent >= 80 || fillPercent <= 10 ? "error" :
-    fillPercent >= 15 ? "success" :
-    "warning";
+  const progressColor = tankLevelTone(fillPercent, tankLimits, tank.product);
 
   return (
     <Card
@@ -283,7 +250,7 @@ function MobileTankSelectorCard({ tank, selected, onClick }) {
   );
 }
 
-function TankChartDetail({ tank }) {
+function TankChartDetail({ tank, tankLimits }) {
   if (!tank) {
     return (
       <Card>
@@ -317,8 +284,8 @@ function TankChartDetail({ tank }) {
   const latest = tank.points[tank.points.length - 1];
   const low = tank.points.reduce((current, point) => (point.fillPercent < current.fillPercent ? point : current), tank.points[0]);
   const high = tank.points.reduce((current, point) => (point.fillPercent > current.fillPercent ? point : current), tank.points[0]);
-  const gaugeOption = buildGaugeOption(latest.fillPercent);
-  const trendOption = buildTrendOption(tank, minValue, maxValue, yTicks);
+  const gaugeOption = buildGaugeOption(latest.fillPercent, tankLimits, tank.product);
+  const trendOption = buildTrendOption(tank, minValue, maxValue, yTicks, tankLimits);
 
   return (
     <Card>
@@ -373,7 +340,85 @@ function TankChartDetail({ tank }) {
   );
 }
 
-export function TankChartsPage() {
+function MobileTankChartDetail({ tank, tankLimits, viewMode }) {
+  if (!tank) {
+    return null;
+  }
+
+  if (!tank.points.length) {
+    return (
+      <Card>
+        <CardContent>
+          <Typography variant="h6">{tank.label}</Typography>
+          <Typography color="text.secondary">
+            No history rows for this tank in the selected timeframe.
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const fillValues = tank.points.map((point) => point.fillPercent);
+  const minValue = Math.max(0, Math.min(...fillValues) - 4);
+  const maxValue = Math.min(100, Math.max(...fillValues) + 4);
+  const yTicks = buildYAxisTicks(minValue, maxValue);
+  const latest = tank.points[tank.points.length - 1];
+  const low = tank.points.reduce((current, point) => (point.fillPercent < current.fillPercent ? point : current), tank.points[0]);
+  const high = tank.points.reduce((current, point) => (point.fillPercent > current.fillPercent ? point : current), tank.points[0]);
+  const gaugeOption = buildGaugeOption(latest.fillPercent, tankLimits, tank.product);
+  const trendOption = buildTrendOption(tank, minValue, maxValue, yTicks, tankLimits);
+
+  return (
+    <Card>
+      <CardContent>
+        <Stack spacing={2}>
+          <div>
+            <Typography variant="h6">{tank.label}</Typography>
+            <Typography color="text.secondary">
+              Tank {tank.atgTankId} • {tank.product}
+            </Typography>
+          </div>
+          <Grid container spacing={1.5}>
+            <Grid size={4}>
+              <Typography variant="caption" color="text.secondary">Latest</Typography>
+              <Typography fontWeight={700}>{formatPercent(latest.fillPercent)}</Typography>
+            </Grid>
+            <Grid size={4}>
+              <Typography variant="caption" color="text.secondary">Low</Typography>
+              <Typography fontWeight={700}>{formatPercent(low.fillPercent)}</Typography>
+            </Grid>
+            <Grid size={4}>
+              <Typography variant="caption" color="text.secondary">Peak</Typography>
+              <Typography fontWeight={700}>{formatPercent(high.fillPercent)}</Typography>
+            </Grid>
+          </Grid>
+          {viewMode === "gauge" ? (
+            <Card variant="outlined">
+              <CardContent>
+                <ReactECharts option={gaugeOption} style={{ height: 260 }} notMerge lazyUpdate opts={{ renderer: "svg" }} />
+                <Typography variant="body2" color="text.secondary" align="center">
+                  Latest {formatVolume(latest.volume)} at {formatDateTime(latest.readAt)}
+                </Typography>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card variant="outlined">
+              <CardContent>
+                <ReactECharts option={trendOption} style={{ height: 320 }} notMerge lazyUpdate opts={{ renderer: "svg" }} />
+                <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}>
+                  <Typography variant="caption" color="text.secondary">{formatDateTime(tank.points[0]?.readAt)}</Typography>
+                  <Typography variant="caption" color="text.secondary">{formatDateTime(latest.readAt)}</Typography>
+                </Stack>
+              </CardContent>
+            </Card>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function TankChartsPage({ jobber }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
@@ -387,14 +432,13 @@ export function TankChartsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [anchorTs, setAnchorTs] = useState("");
-  const [mobileView, setMobileView] = useState("list");
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [mobileView, setMobileView] = useState(searchParams.get("tankId") ? "detail" : "site");
+  const [mobileDetailMode, setMobileDetailMode] = useState("gauge");
 
   useEffect(() => {
     api.getSites()
       .then((data) => {
         setSites(data);
-        if (!selectedSiteId && data.length) setSelectedSiteId(data[0].id);
       })
       .catch((err) => setError(err.message));
   }, []);
@@ -404,8 +448,12 @@ export function TankChartsPage() {
     const tankIdFromUrl = searchParams.get("tankId") || "";
     if (siteIdFromUrl !== selectedSiteId) setSelectedSiteId(siteIdFromUrl);
     if (tankIdFromUrl !== selectedTankId) setSelectedTankId(tankIdFromUrl);
-    if (tankIdFromUrl) setMobileView("detail");
-  }, [searchParams]);
+    if (isMobile) {
+      if (!siteIdFromUrl) setMobileView("site");
+      else if (tankIdFromUrl) setMobileView("detail");
+      else setMobileView("list");
+    }
+  }, [isMobile, searchParams]);
 
   useEffect(() => {
     const nextParams = new URLSearchParams(searchParams);
@@ -501,18 +549,18 @@ export function TankChartsPage() {
   }, [rows, siteDetail]);
 
   useEffect(() => {
-    if (!selectedTankId && groupedTanks.length) {
+    if (!selectedTankId && groupedTanks.length && !isMobile) {
       setSelectedTankId(groupedTanks[0].tankId);
       return;
     }
     if (selectedTankId && !groupedTanks.find((tank) => tank.tankId === selectedTankId)) {
-      setSelectedTankId(groupedTanks[0]?.tankId || "");
+      setSelectedTankId(isMobile ? "" : groupedTanks[0]?.tankId || "");
     }
-  }, [groupedTanks, selectedTankId]);
+  }, [groupedTanks, isMobile, selectedTankId]);
 
   const selectedTank = useMemo(
-    () => groupedTanks.find((tank) => tank.tankId === selectedTankId) || groupedTanks[0] || null,
-    [groupedTanks, selectedTankId]
+    () => groupedTanks.find((tank) => tank.tankId === selectedTankId) || (!isMobile ? groupedTanks[0] || null : null),
+    [groupedTanks, isMobile, selectedTankId]
   );
 
   const summary = useMemo(() => {
@@ -564,91 +612,60 @@ export function TankChartsPage() {
         <CardContent>
           {isMobile ? (
             <Stack spacing={1.5}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Chip label={selectedSiteId ? "Location selected" : "Choose a location"} />
-                <Button
-                  size="small"
-                  startIcon={<FilterListIcon />}
-                  onClick={() => setMobileFiltersOpen((open) => !open)}
-                >
-                  {mobileFiltersOpen ? "Hide filters" : "Filters"}
-                </Button>
-              </Stack>
-              <Collapse in={mobileFiltersOpen}>
+              {!selectedSiteId || mobileView === "site" ? (
                 <Grid container spacing={1.5}>
                   <Grid size={12}>
-                    <FormControl fullWidth size="small">
-                      <InputLabel>Location</InputLabel>
-                      <Select value={selectedSiteId} label="Location" onChange={(event) => setSelectedSiteId(event.target.value)}>
-                        <MenuItem value="">Select a Location</MenuItem>
-                        {sites.map((site) => (
-                          <MenuItem key={site.id} value={site.id}>{site.siteCode} - {site.name}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid size={12}>
-                    <FormControl fullWidth size="small" disabled={!groupedTanks.length}>
-                      <InputLabel>Focused Tank</InputLabel>
-                      <Select
-                        value={selectedTankId}
-                        label="Focused Tank"
-                        onChange={(event) => {
-                          setSelectedTankId(event.target.value);
-                          setMobileView(event.target.value ? "detail" : "list");
-                        }}
-                      >
-                        {groupedTanks.map((tank) => (
-                          <MenuItem key={tank.tankId} value={tank.tankId}>{tank.label}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid size={12}>
-                    <FormControl fullWidth size="small">
-                      <InputLabel>Range</InputLabel>
-                      <Select value={range} label="Range" onChange={(event) => setRange(event.target.value)}>
-                        {rangeOptions.map((option) => (
-                          <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                    <Autocomplete
+                      size="small"
+                      options={sites}
+                      value={sites.find((site) => site.id === selectedSiteId) || null}
+                      onChange={(_event, nextSite) => {
+                        const nextSiteId = nextSite?.id || "";
+                        setSelectedSiteId(nextSiteId);
+                        setSelectedTankId("");
+                        setMobileView(nextSiteId ? "list" : "site");
+                      }}
+                      getOptionLabel={(option) => `${option.siteCode} - ${option.name}`}
+                      isOptionEqualToValue={(option, value) => option.id === value.id}
+                      renderInput={(params) => <TextField {...params} label="Location" placeholder="Type a location" />}
+                      clearOnEscape
+                    />
                   </Grid>
                 </Grid>
-              </Collapse>
+              ) : (
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Chip label={sites.find((site) => site.id === selectedSiteId)?.name || "Location selected"} />
+                  <Button size="small" startIcon={<FilterListIcon />} onClick={() => setMobileView("site")}>
+                    Change Site
+                  </Button>
+                </Stack>
+              )}
             </Stack>
           ) : (
             <Grid container spacing={1.5}>
-              <Grid size={{ xs: 12, md: 5 }}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Location</InputLabel>
-                  <Select value={selectedSiteId} label="Location" onChange={(event) => setSelectedSiteId(event.target.value)}>
-                    <MenuItem value="">Select a Location</MenuItem>
-                    {sites.map((site) => (
-                      <MenuItem key={site.id} value={site.id}>{site.siteCode} - {site.name}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+              <Grid size={{ xs: 12, md: 8 }}>
+                <Autocomplete
+                  size="small"
+                  options={sites}
+                  value={sites.find((site) => site.id === selectedSiteId) || null}
+                  onChange={(_event, nextSite) => setSelectedSiteId(nextSite?.id || "")}
+                  getOptionLabel={(option) => `${option.siteCode} - ${option.name}`}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  renderInput={(params) => <TextField {...params} label="Location" placeholder="Type a location" />}
+                  clearOnEscape
+                />
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
-                <FormControl fullWidth size="small" disabled={!groupedTanks.length}>
-                  <InputLabel>Focused Tank</InputLabel>
-                  <Select value={selectedTankId} label="Focused Tank" onChange={(event) => setSelectedTankId(event.target.value)}>
-                    {groupedTanks.map((tank) => (
-                      <MenuItem key={tank.tankId} value={tank.tankId}>{tank.label}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid size={{ xs: 12, md: 3 }}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Range</InputLabel>
-                  <Select value={range} label="Range" onChange={(event) => setRange(event.target.value)}>
-                    {rangeOptions.map((option) => (
-                      <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <Autocomplete
+                  size="small"
+                  options={rangeOptions}
+                  value={rangeOptions.find((option) => option.value === range) || null}
+                  onChange={(_event, nextRange) => setRange(nextRange?.value || "24h")}
+                  getOptionLabel={(option) => option.label}
+                  isOptionEqualToValue={(option, value) => option.value === value.value}
+                  renderInput={(params) => <TextField {...params} label="Range" placeholder="Type a range" />}
+                  disableClearable
+                />
               </Grid>
             </Grid>
           )}
@@ -680,7 +697,27 @@ export function TankChartsPage() {
                 </Button>
                 <Chip label={`Tank ${selectedTank.atgTankId}`} />
               </Stack>
-              <TankChartDetail tank={selectedTank} />
+              <Stack direction="row" spacing={1}>
+                <Button variant={mobileDetailMode === "gauge" ? "contained" : "outlined"} onClick={() => setMobileDetailMode("gauge")}>
+                  Gauge
+                </Button>
+                <Button variant={mobileDetailMode === "graph" ? "contained" : "outlined"} onClick={() => setMobileDetailMode("graph")}>
+                  Graph
+                </Button>
+              </Stack>
+              {mobileDetailMode === "graph" ? (
+                <Autocomplete
+                  size="small"
+                  options={rangeOptions}
+                  value={rangeOptions.find((option) => option.value === range) || null}
+                  onChange={(_event, nextRange) => setRange(nextRange?.value || "24h")}
+                  getOptionLabel={(option) => option.label}
+                  isOptionEqualToValue={(option, value) => option.value === value.value}
+                  renderInput={(params) => <TextField {...params} label="Graph Range" placeholder="Type a range" />}
+                  disableClearable
+                />
+              ) : null}
+              <MobileTankChartDetail tank={selectedTank} tankLimits={jobber?.tankLimits} viewMode={mobileDetailMode} />
               <Button
                 variant="outlined"
                 startIcon={<TableRowsIcon />}
@@ -696,8 +733,10 @@ export function TankChartsPage() {
                   key={tank.tankId}
                   tank={tank}
                   selected={selectedTank?.tankId === tank.tankId}
+                  tankLimits={jobber?.tankLimits}
                   onClick={() => {
                     setSelectedTankId(tank.tankId);
+                    setMobileDetailMode("gauge");
                     setMobileView("detail");
                   }}
                 />
@@ -714,13 +753,14 @@ export function TankChartsPage() {
                   key={tank.tankId}
                   tank={tank}
                   selected={selectedTank?.tankId === tank.tankId}
+                  tankLimits={jobber?.tankLimits}
                   onClick={() => setSelectedTankId(tank.tankId)}
                 />
               ))}
             </Stack>
           </Grid>
           <Grid size={{ xs: 12, xl: 8 }}>
-            <TankChartDetail tank={selectedTank} />
+            <TankChartDetail tank={selectedTank} tankLimits={jobber?.tankLimits} />
           </Grid>
         </Grid>
       )}

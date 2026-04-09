@@ -1548,6 +1548,7 @@ async function currentJobberForUser(user) {
       slug,
       oauth_domain AS "oauthDomain",
       logo_url AS "logoUrl",
+      tank_limits_json AS "tankLimits",
       created_at AS "createdAt",
       updated_at AS "updatedAt"
      FROM jobbers
@@ -2454,7 +2455,8 @@ app.get("/health", (_req, res) => {
     service: "petroleum-api",
     dbConfigured: hasDbConfig(),
     apiVersion: packageMeta.version || "0.0.0",
-    apiReleaseDate: packageMeta.releaseDate || "Not recorded"
+    apiReleaseDate: packageMeta.releaseDate || "Not recorded",
+    apiReleaseDateTime: packageMeta.releaseDateTime || "Not recorded"
   });
 });
 
@@ -2930,11 +2932,12 @@ app.patch(
 
     await query(
       `UPDATE jobbers
-       SET name=$1, logo_url=$2, updated_at=$3
+       SET name=$1, logo_url=$2, tank_limits_json=$3, updated_at=$4
        WHERE id=$4`,
       [
         body.name?.trim() || current.name,
         typeof body.logoUrl === "string" ? body.logoUrl.trim() : current.logoUrl,
+        body.tankLimits && typeof body.tankLimits === "object" ? JSON.stringify(body.tankLimits) : JSON.stringify(current.tankLimits || {}),
         new Date().toISOString(),
         req.user.jobberId
       ]
