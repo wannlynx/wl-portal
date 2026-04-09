@@ -1,6 +1,6 @@
 {
   "name": "petroleum-api",
-  "version": "2.3.2",
+  "version": "2.3.4",
   "releaseDate": "2026-04-08",
   "private": true,
   "main": "src/server.js",

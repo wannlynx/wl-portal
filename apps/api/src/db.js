@@ -1,4 +1,12 @@
 const { Pool } = require("pg");
+const TRANSIENT_DB_ERROR_CODES = new Set(["57P01", "57P02", "57P03"]);
+const TRANSIENT_DB_ERROR_NAMES = new Set(["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EPIPE"]);
+const TRANSIENT_DB_ERROR_MESSAGES = [
+  "terminating connection due to administrator command",
+  "connection terminated unexpectedly",
+  "server closed the connection unexpectedly",
+  "Connection terminated unexpectedly"
+];
 
 function resolveConnectionString() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -22,6 +30,40 @@ function hasDbConfig() {
   return !!connectionString;
 }
 
+function isTransientDbError(error) {
+  if (!error) return false;
+  if (TRANSIENT_DB_ERROR_CODES.has(String(error.code || "").trim())) return true;
+  if (TRANSIENT_DB_ERROR_NAMES.has(String(error.errno || error.code || "").trim().toUpperCase())) return true;
+  const message = String(error.message || "");
+  return TRANSIENT_DB_ERROR_MESSAGES.some((fragment) => message.includes(fragment));
+}
+
+function resetPool() {
+  const current = pool;
+  pool = null;
+  if (current) {
+    current.end().catch(() => {});
+  }
+}
+
+function createPool() {
+  const nextPool = new Pool({
+    connectionString,
+    ssl: process.env.PGSSL === "disable" ? false : { rejectUnauthorized: false }
+  });
+  nextPool.on("error", (error) => {
+    console.error("[db] pool error", error);
+    if (isTransientDbError(error)) {
+      resetPool();
+    }
+  });
+  return nextPool;
+}
+
+async function delay(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function getPool() {
   if (!hasDbConfig()) {
     throw new Error(
@@ -29,31 +71,62 @@ function getPool() {
     );
   }
   if (!pool) {
-    pool = new Pool({
-      connectionString,
-      ssl: process.env.PGSSL === "disable" ? false : { rejectUnauthorized: false }
-    });
+    pool = createPool();
   }
   return pool;
 }
 
+async function withDbRetry(run, { attempts = 2, retryDelayMs = 250 } = {}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientDbError(error) || attempt === attempts) {
+        throw error;
+      }
+      console.warn(`[db] transient database error on attempt ${attempt}; retrying`, error);
+      resetPool();
+      await delay(retryDelayMs);
+    }
+  }
+  throw lastError;
+}
+
 async function query(text, params = []) {
-  return getPool().query(text, params);
+  return withDbRetry(() => getPool().query(text, params));
 }
 
 async function tx(run) {
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const result = await run(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  return withDbRetry(async () => {
+    const client = await getPool().connect();
+    let releaseAsBroken = false;
+    try {
+      await client.query("BEGIN");
+      const result = await run(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      releaseAsBroken = isTransientDbError(error);
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        releaseAsBroken = true;
+        console.error("[db] rollback failed", rollbackError);
+      }
+      throw error;
+    } finally {
+      try {
+        client.release(releaseAsBroken);
+      } catch (releaseError) {
+        console.error("[db] client release failed", releaseError);
+      }
+      if (releaseAsBroken) {
+        resetPool();
+      }
+    }
+  });
 }
 
 async function initDb() {
@@ -399,6 +472,7 @@ async function initDb() {
       selection_mode TEXT NOT NULL,
       product_family TEXT NOT NULL,
       market_key TEXT NOT NULL DEFAULT '',
+      basis_mode TEXT NOT NULL DEFAULT 'match_rule_vendor',
       vendors_json JSONB NOT NULL DEFAULT '[]'::jsonb
     );
 
@@ -598,6 +672,11 @@ async function initDb() {
   await query(`
     CREATE INDEX IF NOT EXISTS pricing_rule_components_rule_set_id_idx
     ON pricing_rule_components(rule_set_id, sort_order ASC);
+  `);
+
+  await query(`
+    ALTER TABLE pricing_rule_vendor_sets
+    ADD COLUMN IF NOT EXISTS basis_mode TEXT NOT NULL DEFAULT 'match_rule_vendor';
   `);
 
   await query(`
