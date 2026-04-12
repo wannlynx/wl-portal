@@ -2161,6 +2161,255 @@ select {
   gap: 10px;
 }
 
+.allied-mgmt-page,
+.allied-mgmt-stack,
+.allied-mgmt-mini-grid,
+.allied-mgmt-pulse-grid,
+.allied-mgmt-grid,
+.allied-mgmt-pump-grid,
+.allied-mgmt-inventory-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.allied-mgmt-grid-2 {
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+}
+
+.allied-mgmt-grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.allied-mgmt-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: end;
+  padding: 24px 26px;
+  border: 1px solid #c8dbe7;
+  background:
+    radial-gradient(circle at top left, rgba(110, 162, 193, 0.2), transparent 32%),
+    linear-gradient(180deg, #fbfdff 0%, #edf5fa 100%);
+}
+
+.allied-mgmt-hero h2 {
+  margin: 6px 0 0;
+  color: #173447;
+}
+
+.allied-mgmt-hero p,
+.allied-mgmt-note-card p,
+.allied-mgmt-pulse-meta {
+  margin: 10px 0 0;
+  color: #4f6b7c;
+  line-height: 1.55;
+}
+
+.allied-mgmt-kicker,
+.allied-mgmt-hero-actions label span,
+.allied-mgmt-tank-stats span,
+.allied-mgmt-pump-metrics span {
+  color: #59758a;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+
+.allied-mgmt-hero-actions {
+  display: grid;
+  gap: 10px;
+  min-width: 280px;
+}
+
+.allied-mgmt-pulse-grid,
+.allied-mgmt-mini-grid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.allied-mgmt-pulse-card {
+  background:
+    linear-gradient(180deg, rgba(247, 251, 254, 0.98) 0%, rgba(235, 244, 249, 0.98) 100%);
+}
+
+.allied-mgmt-section-tabs {
+  flex-wrap: wrap;
+}
+
+.allied-mgmt-pump-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.allied-mgmt-pump-card,
+.allied-mgmt-note-card,
+.allied-mgmt-tank-card {
+  border-radius: 18px;
+  border: 1px solid #d2e2eb;
+  background: #f9fcfe;
+}
+
+.allied-mgmt-pump-card {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.allied-mgmt-pump-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.allied-mgmt-pump-grade {
+  color: #173447;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.allied-mgmt-pump-metrics {
+  display: grid;
+  gap: 10px;
+}
+
+.allied-mgmt-pump-metrics strong,
+.allied-mgmt-tank-stats strong {
+  display: block;
+  color: #173447;
+  font-size: 14px;
+}
+
+.allied-mgmt-pump-critical {
+  border-color: #e2b2ad;
+  background: #fff4f2;
+}
+
+.allied-mgmt-pump-warn {
+  border-color: #e2cfa9;
+  background: #fff9ee;
+}
+
+.allied-mgmt-pump-success {
+  border-color: #bcd8be;
+  background: #f3fbf4;
+}
+
+.allied-mgmt-pump-info {
+  border-color: #bfd4e6;
+  background: #f3f9fd;
+}
+
+.allied-mgmt-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.allied-mgmt-pill-neutral,
+.allied-mgmt-pill-info {
+  color: #215372;
+  background: #dfeef7;
+}
+
+.allied-mgmt-pill-success {
+  color: #1e6634;
+  background: #ddf3e0;
+}
+
+.allied-mgmt-pill-warn {
+  color: #8a5b11;
+  background: #f7ead0;
+}
+
+.allied-mgmt-pill-critical {
+  color: #943f39;
+  background: #f8dcda;
+}
+
+.allied-mgmt-note-card {
+  padding: 16px 18px;
+}
+
+.allied-mgmt-note-card strong {
+  color: #173447;
+}
+
+.allied-mgmt-inventory-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.allied-mgmt-tank-card {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.allied-mgmt-tank-bar {
+  position: relative;
+  height: 190px;
+  border-radius: 20px;
+  border: 1px solid #c9dce7;
+  background: linear-gradient(180deg, #edf5fa 0%, #d9e8f1 100%);
+  overflow: hidden;
+}
+
+.allied-mgmt-tank-fuel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, #3c789d 0%, #214b68 100%);
+}
+
+.allied-mgmt-tank-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.allied-mgmt-tank-copy strong {
+  color: #173447;
+  font-size: 17px;
+}
+
+.allied-mgmt-tank-copy > span {
+  color: #59758a;
+}
+
+.allied-mgmt-tank-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+@media (max-width: 900px) {
+  .allied-mgmt-hero,
+  .allied-mgmt-tank-card {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .allied-mgmt-grid-2,
+  .allied-mgmt-grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .allied-mgmt-hero-actions {
+    min-width: 0;
+  }
+
+  .allied-mgmt-tank-bar {
+    height: 120px;
+  }
+}
+
 .price-tables-page,
 .price-tables-layout,
 .price-tables-shell,

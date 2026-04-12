@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 
-const ENCRYPTION_KEY_ENV = process.env.PETROLEUM_SECRET_KEY || process.env.APP_ENCRYPTION_KEY || "";
+const PROTOTYPE_ENCRYPTION_KEY = "local-dev-secret";
+const ENCRYPTION_KEY_ENV = process.env.PETROLEUM_SECRET_KEY || process.env.APP_ENCRYPTION_KEY || PROTOTYPE_ENCRYPTION_KEY;
 
 function encryptionKey() {
   if (!ENCRYPTION_KEY_ENV) {

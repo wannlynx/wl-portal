@@ -1,7 +1,10 @@
+require("./loadEnv");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const yaml = require("js-yaml");
 const { initDb, tx, query } = require("./db");
+const { replaceTransactionsForSites } = require("./alliedTransactions");
 
 const root = path.resolve(__dirname, "../../../");
 const siteYamlPath = path.join(root, "data", "sample_site_config.yaml");
@@ -59,6 +62,10 @@ function slugify(value) {
 
 function normalizeWhitespace(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function id(prefix) {
+  return `${prefix}_${crypto.randomBytes(6).toString("hex")}`;
 }
 
 function inferProduct(label) {
@@ -225,6 +232,242 @@ function buildImportedSites(csvRows) {
     .sort((a, b) => Number(a.siteCode) - Number(b.siteCode));
 }
 
+async function seedCustomerPricingData(client, { jobberId, userId, now, pricingDate, marketKey, terminalKey, customerName }) {
+  const customerId = id("customer");
+  const profileId = id("customer-profile");
+  const snapshotId = id("pricing-source");
+  const gasTaxId = id("pricing-tax");
+  const dieselTaxId = id("pricing-tax");
+
+  await client.query(
+    `INSERT INTO customers(
+      id, jobber_id, name, address_line1, address_line2, city, state, postal_code, terminal_key, status, created_at, updated_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+    [
+      customerId,
+      jobberId,
+      customerName,
+      "100 Demo Way",
+      "",
+      "San Francisco",
+      "CA",
+      "94103",
+      terminalKey,
+      "active",
+      now,
+      now
+    ]
+  );
+
+  await client.query(
+    `INSERT INTO customer_pricing_profiles(
+      id, customer_id, effective_start, effective_end, freight_miles, freight_cost_gas, freight_cost_diesel,
+      rack_margin_gas, rack_margin_diesel, discount_regular, discount_mid, discount_premium, discount_diesel,
+      output_template_id, rules_json, created_at, updated_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17)`,
+    [
+      profileId,
+      customerId,
+      pricingDate,
+      null,
+      42,
+      0.12,
+      0.18,
+      0.22,
+      0.28,
+      0.03,
+      0.04,
+      0.05,
+      0.02,
+      null,
+      JSON.stringify({
+        branch: "unbranded",
+        marketKey,
+        terminalKey
+      }),
+      now,
+      now
+    ]
+  );
+
+  await client.query(
+    `INSERT INTO pricing_source_snapshots(
+      id, jobber_id, pricing_date, source_type, source_label, status, received_at, created_at, created_by, notes
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [
+      snapshotId,
+      jobberId,
+      pricingDate,
+      "opis",
+      "Demo OPIS Snapshot",
+      "published",
+      now,
+      now,
+      userId,
+      "Seeded customer pricing source values"
+    ]
+  );
+
+  const sourceValues = [];
+
+  for (const entry of sourceValues) {
+    await client.query(
+      `INSERT INTO pricing_source_values(
+        id, snapshot_id, market_key, terminal_key, product_key, vendor_key, quote_code, value, unit, effective_date, metadata_json, created_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12)`,
+      [
+        id("pricing-source-value"),
+        snapshotId,
+        entry.marketKey,
+        entry.terminalKey,
+        entry.productKey,
+        entry.vendorKey,
+        entry.quoteCode,
+        entry.value,
+        entry.unit,
+        pricingDate,
+        JSON.stringify({ sourceValueKey: entry.quoteCode }),
+        now
+      ]
+    );
+  }
+
+  await client.query(
+    `INSERT INTO pricing_tax_schedules(
+      id, jobber_id, product_family, tax_name, value, unit, effective_start, effective_end, created_at, created_by
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [gasTaxId, jobberId, "regular", "gas_tax", 0.55, "usd_gal", pricingDate, null, now, userId]
+  );
+  await client.query(
+    `INSERT INTO pricing_tax_schedules(
+      id, jobber_id, product_family, tax_name, value, unit, effective_start, effective_end, created_at, created_by
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [id("pricing-tax"), jobberId, "mid", "gas_tax", 0.55, "usd_gal", pricingDate, null, now, userId]
+  );
+  await client.query(
+    `INSERT INTO pricing_tax_schedules(
+      id, jobber_id, product_family, tax_name, value, unit, effective_start, effective_end, created_at, created_by
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [id("pricing-tax"), jobberId, "premium", "gas_tax", 0.55, "usd_gal", pricingDate, null, now, userId]
+  );
+  await client.query(
+    `INSERT INTO pricing_tax_schedules(
+      id, jobber_id, product_family, tax_name, value, unit, effective_start, effective_end, created_at, created_by
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [dieselTaxId, jobberId, "diesel", "diesel_tax", 0.63, "usd_gal", pricingDate, null, now, userId]
+  );
+
+  const ruleDefinitions = [
+    {
+      productFamily: "regular",
+      productKey: "reg_87_carb",
+      components: [
+        ["basis_choice", "Spot or Rack", "spot_or_rack_best", "", null, 1, { spotSourceRef: "marketKey=$profile.marketKey|terminalKey=$profile.terminalKey|productKey=reg_87_carb|quoteCode=OPIS_SPOT_API", marketKey, terminalKey, productKey: "reg_87_carb" }],
+        ["freight", "Freight Gas", "customer_profile", "freightCostGas", null, 1, {}],
+        ["margin", "Rack Margin Gas", "customer_profile", "rackMarginGas", null, 1, {}],
+        ["tax", "Gas Tax", "tax", "gas_tax", null, 1, {}],
+        ["discount", "Regular Discount", "customer_profile", "discountRegular", null, -1, {}]
+      ],
+      vendors: ["valero", "chevron", "shell"]
+    },
+    {
+      productFamily: "mid",
+      productKey: "mid_89_carb",
+      components: [
+        ["rack_base", "Lowest Rack", "vendor_min", "", null, 1, { marketKey, productKey: "mid_89_carb" }],
+        ["freight", "Freight Gas", "customer_profile", "freightCostGas", null, 1, {}],
+        ["margin", "Rack Margin Gas", "customer_profile", "rackMarginGas", null, 1, {}],
+        ["tax", "Gas Tax", "tax", "gas_tax", null, 1, {}],
+        ["discount", "Mid Discount", "customer_profile", "discountMid", null, -1, {}]
+      ],
+      vendors: ["valero", "chevron"]
+    },
+    {
+      productFamily: "premium",
+      productKey: "premium_91_carb",
+      components: [
+        ["basis_choice", "Spot or Rack", "spot_or_rack_best", "", null, 1, { spotSourceRef: "marketKey=$profile.marketKey|terminalKey=$profile.terminalKey|productKey=premium_91_carb|quoteCode=OPIS_SPOT_API", marketKey, terminalKey, productKey: "premium_91_carb" }],
+        ["freight", "Freight Gas", "customer_profile", "freightCostGas", null, 1, {}],
+        ["margin", "Rack Margin Gas", "customer_profile", "rackMarginGas", null, 1, {}],
+        ["tax", "Gas Tax", "tax", "gas_tax", null, 1, {}],
+        ["discount", "Premium Discount", "customer_profile", "discountPremium", null, -1, {}]
+      ],
+      vendors: ["valero", "shell"]
+    },
+    {
+      productFamily: "diesel",
+      productKey: "diesel_carb_ulsd",
+      components: [
+        ["basis_choice", "Spot or Rack", "spot_or_rack_best", "", null, 1, { spotSourceRef: "marketKey=$profile.marketKey|terminalKey=$profile.terminalKey|productKey=diesel_carb_ulsd|quoteCode=OPIS_SPOT_API", marketKey, terminalKey, productKey: "diesel_carb_ulsd" }],
+        ["freight", "Freight Diesel", "customer_profile", "freightCostDiesel", null, 1, {}],
+        ["margin", "Rack Margin Diesel", "customer_profile", "rackMarginDiesel", null, 1, {}],
+        ["tax", "Diesel Tax", "tax", "diesel_tax", null, 1, {}],
+        ["discount", "Diesel Discount", "customer_profile", "discountDiesel", null, -1, {}]
+      ],
+      vendors: ["valero", "chevron"]
+    }
+  ];
+
+  for (const definition of ruleDefinitions) {
+    const ruleSetId = id("pricing-rule");
+    await client.query(
+      `INSERT INTO pricing_rule_sets(
+        id, jobber_id, name, product_family, effective_start, effective_end, status, version_label, notes, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        ruleSetId,
+        jobberId,
+        `${definition.productFamily.toUpperCase()} Demo Rule`,
+        definition.productFamily,
+        pricingDate,
+        null,
+        "active",
+        "seed-v1",
+        "Seeded baseline rule for pricing preview",
+        now,
+        now
+      ]
+    );
+
+    let sortOrder = 0;
+    for (const component of definition.components) {
+      sortOrder += 1;
+      await client.query(
+        `INSERT INTO pricing_rule_components(
+          id, rule_set_id, component_key, label, source_kind, source_ref, default_value, multiplier, sort_order, is_editable, metadata_json
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)`,
+        [
+          id("pricing-rule-component"),
+          ruleSetId,
+          component[0],
+          component[1],
+          component[2],
+          component[3],
+          component[4],
+          component[5],
+          sortOrder,
+          true,
+          JSON.stringify(component[6] || {})
+        ]
+      );
+    }
+
+    await client.query(
+      `INSERT INTO pricing_rule_vendor_sets(
+        id, rule_set_id, selection_mode, product_family, market_key, vendors_json
+      ) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
+      [
+        id("pricing-rule-vendor-set"),
+        ruleSetId,
+        "lowest",
+        definition.productFamily,
+        marketKey,
+        JSON.stringify(definition.vendors)
+      ]
+    );
+  }
+}
+
 function buildConfiguredSites(config, layout) {
   return (config.sites || []).map((site) => ({
     kind: "configured",
@@ -259,6 +502,117 @@ function isCaliforniaSite(site) {
   const region = String(site.region || "").toLowerCase();
   const address = String(site.address || "").toLowerCase();
   return region.includes("california") || address.includes(", ca");
+}
+
+function alliedBusinessTimestamp(baseMs, dayOffset, transactionIndex, timezone) {
+  const hourBlocks = [6, 7, 8, 9, 11, 12, 14, 16, 17, 18, 19, 20];
+  const hour = hourBlocks[(transactionIndex + dayOffset) % hourBlocks.length];
+  const minute = (transactionIndex * 7 + dayOffset * 11) % 60;
+  const second = (transactionIndex * 13 + dayOffset * 5) % 60;
+  const offset = timezone === "America/Los_Angeles" ? "-08:00" : "-05:00";
+  const anchor = new Date(baseMs + dayOffset * 24 * 60 * 60 * 1000);
+  const localDate = anchor.toISOString().slice(0, 10);
+  return new Date(`${localDate}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}${offset}`).toISOString();
+}
+
+function buildAlliedTransactionsForSite({ siteId, siteCode, timezone, pumpCount, dayCount = 35, rowsPerDay = 24 }) {
+  const accountOrigins = ["Allied Fuel Controller", "Allied POS", "Allied Pay"];
+  const paymentTypes = ["Credit", "Debit", "PresetCash", "Fleet"];
+  const cardCatalog = [
+    { cardName: "Visa", cardType: "Credit" },
+    { cardName: "Mastercard", cardType: "Credit" },
+    { cardName: "Discover", cardType: "Credit" },
+    { cardName: "Amex", cardType: "Credit" },
+    { cardName: "Fleet One", cardType: "Fleet" },
+    { cardName: "WEX", cardType: "Fleet" },
+    { cardName: "Cash", cardType: "Cash" }
+  ];
+  const completeStatuses = ["Complete", "Approved", "Complete"];
+  const abortStatuses = ["CustomerAbort", "CustomerAbort", "Declined"];
+  const entryMethods = ["EmvQuickChip", "EmvContactless", "ChipInsert", "Magstripe", "ManualEntry"];
+  const emvTranTypes = ["FuelSale", "PreAuth", "Completion", "ContactlessFuel"];
+  const denialReasons = ["Insufficient Funds", "EMV Fallback", "Issuer Unavailable", "Expired Card", "Do Not Honor", ""];
+  const baseMs = new Date("2026-02-24T00:00:00Z").getTime();
+  const rows = [];
+
+  for (let dayOffset = 0; dayOffset < dayCount; dayOffset += 1) {
+    for (let index = 0; index < rowsPerDay; index += 1) {
+      const ordinal = dayOffset * rowsPerDay + index;
+      const businessTs = alliedBusinessTimestamp(baseMs, dayOffset, index, timezone);
+      const pumpNumber = ((ordinal % Math.max(pumpCount, 1)) + 1);
+      const fuelPositionId = `FP-${String(pumpNumber).padStart(2, "0")}`;
+      const card = cardCatalog[ordinal % cardCatalog.length];
+      const paymentType = card.cardName === "Cash" ? "PresetCash" : paymentTypes[ordinal % paymentTypes.length];
+      const suspiciousPump = pumpNumber === Math.min(3, Math.max(pumpCount, 1));
+      const weekend = [0, 6].includes(new Date(businessTs).getUTCDay());
+      const forceAbort = suspiciousPump && (dayOffset % 6 === 2 || dayOffset % 6 === 3) && index % 4 === 0;
+      const forceFallback = suspiciousPump && dayOffset % 9 === 4 && index % 3 === 1;
+      const forceZeroDollar = dayOffset % 13 === 8 && index % 8 === 2;
+      const forceOutlier = dayOffset % 11 === 5 && index % 9 === 0;
+      const malformedPan = dayOffset % 17 === 6 && index % 10 === 3;
+      const status = forceAbort ? abortStatuses[(ordinal + 1) % abortStatuses.length] : completeStatuses[ordinal % completeStatuses.length];
+      const entryMethod = forceFallback ? "FallbackMSR" : entryMethods[ordinal % entryMethods.length];
+      const gallonsBase = paymentType === "PresetCash" ? 7 + (ordinal % 8) : 9 + (ordinal % 10);
+      const gallons = forceAbort ? (index % 3 === 0 ? 1.2 : 0) : forceOutlier ? 42 + (ordinal % 7) : gallonsBase + (weekend ? -1.2 : 0.8);
+      const salesPrice = Number((3.24 + ((ordinal + pumpNumber) % 17) * 0.03).toFixed(3));
+      const computedTotal = Number((Math.max(gallons, 0) * salesPrice).toFixed(2));
+      const totalAmount = forceAbort ? (index % 5 === 0 ? Number((computedTotal * 0.5).toFixed(2)) : 0) : forceZeroDollar ? 0 : computedTotal;
+      const authAmount = forceAbort ? Number((computedTotal + 8).toFixed(2)) : Number((Math.max(totalAmount + (ordinal % 2 === 0 ? 5 : 0), totalAmount - (forceOutlier ? 8 : 0))).toFixed(2));
+      const emvStatus = status === "Complete" || status === "Approved"
+        ? (forceFallback ? "FallbackApproved" : entryMethod === "EmvContactless" ? "ContactlessApproved" : "Approved")
+        : (forceFallback ? "FallbackRequired" : "Declined");
+      const denialReason = status === "CustomerAbort"
+        ? "Customer Cancelled"
+        : status === "Declined"
+          ? denialReasons[(ordinal + 2) % denialReasons.length] || "Issuer Unavailable"
+          : forceFallback
+            ? "Fallback Required"
+            : "";
+      const expMonth = String(((ordinal % 12) + 1)).padStart(2, "0");
+      const expYear = String(26 + (ordinal % 4));
+      const first8 = malformedPan ? "12AB567" : String(40000000 + (ordinal % 999999)).padStart(8, "0");
+      const last4 = malformedPan ? "9X2" : String(1000 + (ordinal % 9000));
+
+      rows.push({
+        id: `allied-${siteId}-${ordinal + 1}`,
+        siteId,
+        transactionId: `${siteCode}-${String(dayOffset + 1).padStart(2, "0")}-${String(index + 1).padStart(4, "0")}`,
+        accountOrigin: accountOrigins[ordinal % accountOrigins.length],
+        actualSalesPrice: salesPrice,
+        authAmount,
+        cardName: card.cardName,
+        cardType: card.cardType,
+        emvErrorCode: forceFallback ? "FALLBACK_90" : status === "Declined" ? `D${String((ordinal % 9) + 1).padStart(2, "0")}` : "",
+        emvStatus,
+        emvTranType: emvTranTypes[ordinal % emvTranTypes.length],
+        entryMethod,
+        expDate: malformedPan ? "1/2" : `${expMonth}/${expYear}`,
+        fallbackToMsr: forceFallback,
+        first8,
+        fuelDescription: ordinal % 5 === 0 ? "Regular Unleaded" : ordinal % 5 === 1 ? "Midgrade" : ordinal % 5 === 2 ? "Premium" : ordinal % 5 === 3 ? "Diesel" : "Regular Unleaded",
+        fuelPositionId: status === "Complete" && dayOffset % 19 === 7 && index % 12 === 2 ? "" : fuelPositionId,
+        fuelQuantityGallons: Number(gallons.toFixed(3)),
+        last4,
+        paymentType,
+        storeId: siteCode,
+        tagDenialReason: denialReason,
+        timestamp: businessTs,
+        timezone,
+        totalAmount,
+        rawJson: {
+          scenario: [
+            forceAbort ? "abort" : null,
+            forceFallback ? "fallback" : null,
+            forceZeroDollar ? "zero-dollar" : null,
+            forceOutlier ? "outlier" : null,
+            malformedPan ? "malformed-pan" : null
+          ].filter(Boolean)
+        }
+      });
+    }
+  }
+
+  return rows;
 }
 
 function buildImportedHistoryPoints(siteIndex, tankIndex, site, tank) {
@@ -341,7 +695,20 @@ async function seedDatabase() {
   await tx(async (client) => {
     await client.query("DELETE FROM user_site_assignments");
     await client.query("DELETE FROM user_jobber_roles");
+    await client.query("DELETE FROM allied_transactions");
     await client.query("DELETE FROM alarm_events");
+    await client.query("DELETE FROM pricing_export_jobs");
+    await client.query("DELETE FROM generated_customer_prices");
+    await client.query("DELETE FROM pricing_export_templates");
+    await client.query("DELETE FROM pricing_rule_vendor_sets");
+    await client.query("DELETE FROM pricing_rule_components");
+    await client.query("DELETE FROM pricing_rule_sets");
+    await client.query("DELETE FROM pricing_tax_schedules");
+    await client.query("DELETE FROM pricing_source_values");
+    await client.query("DELETE FROM pricing_source_snapshots");
+    await client.query("DELETE FROM customer_pricing_profiles");
+    await client.query("DELETE FROM customer_contacts");
+    await client.query("DELETE FROM customers");
     await client.query("DELETE FROM atg_inventory_readings");
     await client.query("DELETE FROM tank_measurements");
     await client.query("DELETE FROM connection_status");
@@ -404,6 +771,26 @@ async function seedDatabase() {
         membership
       );
     }
+
+    const pricingDate = now.slice(0, 10);
+    await seedCustomerPricingData(client, {
+      jobberId: californiaJobberId,
+      userId: "user-ca-admin",
+      now,
+      pricingDate,
+      marketKey: "san_francisco",
+      terminalKey: "san_francisco_terminal",
+      customerName: "Acme Fueling SF"
+    });
+    await seedCustomerPricingData(client, {
+      jobberId: nonCaliforniaJobberId,
+      userId: "user-nca-admin",
+      now,
+      pricingDate,
+      marketKey: "stockton",
+      terminalKey: "stockton_terminal",
+      customerName: "Central Valley Fuel"
+    });
 
     for (let siteIndex = 0; siteIndex < allSites.length; siteIndex += 1) {
       const site = allSites[siteIndex];
@@ -719,6 +1106,79 @@ async function seedDatabase() {
         );
       }
     }
+
+    for (const entry of seededSiteMeta) {
+      const alliedRows = buildAlliedTransactionsForSite({
+        siteId: entry.siteId,
+        siteCode: entry.site.siteCode,
+        timezone: entry.site.timezone,
+        pumpCount: Math.max((entry.site.pumps || []).length, 4)
+      });
+
+      for (const row of alliedRows) {
+        await client.query(
+          `INSERT INTO allied_transactions(
+            id, site_id, transaction_id, account_origin, actual_sales_price, auth_amount, card_name, card_type,
+            emv_error_code, emv_status, emv_tran_type, entry_method, exp_date, fallback_to_msr, first8,
+            fuel_description, fuel_position_id, fuel_quantity_gallons, last4, payment_type, store_id,
+            tag_denial_reason, timestamp, timezone, total_amount, raw_json, created_at
+          ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,
+            $9,$10,$11,$12,$13,$14,$15,
+            $16,$17,$18,$19,$20,$21,
+            $22,$23,$24,$25,$26::jsonb,$27
+          )`,
+          [
+            row.id,
+            row.siteId,
+            row.transactionId,
+            row.accountOrigin,
+            row.actualSalesPrice,
+            row.authAmount,
+            row.cardName,
+            row.cardType,
+            row.emvErrorCode,
+            row.emvStatus,
+            row.emvTranType,
+            row.entryMethod,
+            row.expDate,
+            row.fallbackToMsr,
+            row.first8,
+            row.fuelDescription,
+            row.fuelPositionId,
+            row.fuelQuantityGallons,
+            row.last4,
+            row.paymentType,
+            row.storeId,
+            row.tagDenialReason,
+            row.timestamp,
+            row.timezone,
+            row.totalAmount,
+            JSON.stringify(row.rawJson || {}),
+            row.timestamp
+          ]
+        );
+      }
+    }
+
+    await replaceTransactionsForSites(
+      client,
+      seededSiteMeta.map((entry) => ({
+        id: entry.siteId,
+        address: entry.site.address,
+        timezone: entry.site.timezone,
+        pumpCount: Array.isArray(entry.site.pumps) ? entry.site.pumps.length : 0,
+        fuelPositions:
+          Array.isArray(entry.site.pumps) && entry.site.pumps.length > 0
+            ? entry.site.pumps.flatMap((pump) => [
+                String(Number(pump.pump_number) * 2 - 1),
+                String(Number(pump.pump_number) * 2)
+              ])
+            : [],
+        products: Array.isArray(entry.site.tanks) ? entry.site.tanks.map((tank) => tank.product) : []
+      })),
+      {}
+    );
   });
 }
 

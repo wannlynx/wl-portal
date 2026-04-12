@@ -35,6 +35,7 @@ import PaymentsIcon from "@mui/icons-material/Payments";
 import FlashOnIcon from "@mui/icons-material/FlashOn";
 import { api } from "../api";
 import { SiteMap } from "../components/SiteMap";
+import { TanStackDataTable } from "../components/TanStackDataTable";
 import ReactECharts from "echarts-for-react";
 import { SiteAlertsDialog } from "../components/SiteAlertsDialog";
 import { gaugeColorStops } from "../tankLimits";
@@ -429,6 +430,29 @@ export function DashboardPage({ jobber }) {
   const regionRows = useMemo(() => buildRegionRows(filteredSites), [filteredSites]);
   const attentionFeed = useMemo(() => buildAttentionFeed(filteredSites), [filteredSites]);
   const connectivityFeed = useMemo(() => buildConnectivityFeed(filteredSites), [filteredSites]);
+  const siteTableRows = useMemo(() => filteredSites.map((site) => ({
+    ...site,
+    health: siteHealth(site),
+    siteLabel: site.name,
+    addressLabel: [site.address, site.postalCode].filter(Boolean).join(" ") || "No address",
+    atgLastSeenLabel: formatDateTime(site.atgLastSeenAt)
+  })), [filteredSites]);
+  const siteTableColumns = useMemo(() => [
+    { accessorKey: "siteLabel", header: "Site", cell: (info) => info.getValue(), meta: { minWidth: 180 } },
+    { accessorKey: "region", header: "Region", cell: (info) => info.getValue() || "Unassigned", meta: { minWidth: 140 } },
+    { accessorKey: "addressLabel", header: "Address", cell: (info) => info.getValue(), meta: { minWidth: 220 } },
+    { accessorKey: "criticalCount", header: "Critical", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 100 } },
+    { accessorKey: "warnCount", header: "Warn", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 90 } },
+    { accessorKey: "health", header: "Pump Health", cell: (info) => formatPercent(info.getValue()), meta: { align: "right", minWidth: 120 } },
+    { accessorKey: "atgLastSeenLabel", header: "ATG Last Seen", cell: (info) => info.getValue(), meta: { minWidth: 180 } }
+  ], []);
+  const regionTableColumns = useMemo(() => [
+    { accessorKey: "region", header: "Region", cell: (info) => info.getValue(), meta: { minWidth: 160 } },
+    { accessorKey: "sites", header: "Sites", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 90 } },
+    { accessorKey: "critical", header: "Critical", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 90 } },
+    { accessorKey: "warning", header: "Warn", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 90 } },
+    { accessorKey: "health", header: "Health", cell: (info) => formatPercent(info.getValue()), meta: { align: "right", minWidth: 100 } }
+  ], []);
 
   function submitAgentPrompt(event) {
     event.preventDefault();
@@ -968,53 +992,15 @@ export function DashboardPage({ jobber }) {
                     })}
                   </Stack>
                 ) : (
-                  <TableContainer component={Paper} variant="outlined" sx={{ overflowX: "auto" }}>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Site</TableCell>
-                          <TableCell>Region</TableCell>
-                          <TableCell>Address</TableCell>
-                          <TableCell align="right">Critical</TableCell>
-                          <TableCell align="right">Warn</TableCell>
-                          <TableCell align="right">Pump Health</TableCell>
-                          <TableCell>ATG Last Seen</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {filteredSites.map((site) => {
-                          const health = siteHealth(site);
-                          return (
-                            <TableRow
-                              key={site.id}
-                              hover
-                              selected={selectedSiteId === site.id}
-                              onClick={() => setSelectedSiteId(site.id)}
-                              sx={{ cursor: "pointer" }}
-                            >
-                              <TableCell>
-                                <Stack spacing={0.5}>
-                                  <Typography fontWeight={600}>{site.name}</Typography>
-                                  <Typography variant="caption" color="text.secondary">{site.siteCode}</Typography>
-                                </Stack>
-                              </TableCell>
-                              <TableCell>{site.region || "Unassigned"}</TableCell>
-                              <TableCell>{[site.address, site.postalCode].filter(Boolean).join(" ") || "No address"}</TableCell>
-                              <TableCell align="right">{site.criticalCount || 0}</TableCell>
-                              <TableCell align="right">{site.warnCount || 0}</TableCell>
-                              <TableCell align="right" sx={{ minWidth: 140 }}>
-                                <Stack spacing={0.5}>
-                                  <Typography variant="body2">{formatPercent(health)}</Typography>
-                                  <LinearProgress variant="determinate" value={Math.max(0, Math.min(100, health * 100))} color={statusColor(health)} />
-                                </Stack>
-                              </TableCell>
-                              <TableCell>{formatDateTime(site.atgLastSeenAt)}</TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+                  <TanStackDataTable
+                    rows={siteTableRows}
+                    columns={siteTableColumns}
+                    globalSearchPlaceholder="Search sites..."
+                    initialPageSize={10}
+                    getRowId={(row) => row.id}
+                    isRowSelected={(row) => selectedSiteId === row.id}
+                    onRowClick={(row) => setSelectedSiteId(row.id)}
+                  />
                 )}
               </Stack>
             </CardContent>
@@ -1195,30 +1181,7 @@ export function DashboardPage({ jobber }) {
                     ))}
                   </Stack>
                 ) : (
-                  <TableContainer component={Paper} variant="outlined" sx={{ overflowX: "auto" }}>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Region</TableCell>
-                          <TableCell align="right">Sites</TableCell>
-                          <TableCell align="right">Critical</TableCell>
-                          <TableCell align="right">Warn</TableCell>
-                          <TableCell align="right">Health</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {regionRows.map((row) => (
-                          <TableRow key={row.region}>
-                            <TableCell>{row.region}</TableCell>
-                            <TableCell align="right">{row.sites}</TableCell>
-                            <TableCell align="right">{row.critical}</TableCell>
-                            <TableCell align="right">{row.warning}</TableCell>
-                            <TableCell align="right">{formatPercent(row.health)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+                  <TanStackDataTable rows={regionRows} columns={regionTableColumns} globalSearchPlaceholder="Search regions..." initialPageSize={8} />
                 )}
               </Stack>
             </CardContent>

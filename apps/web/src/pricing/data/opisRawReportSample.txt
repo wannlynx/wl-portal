@@ -1,0 +1,123 @@
+SAN FRANCISCO, CA                                      2026-03-30 10:01:04 EDT
+                   **OPIS CONTRACT BENCHMARK FILE**
+       **OPIS NET CARFG ETHANOL (10%) PRICES WITHOUT CAR COST **
+                                                                Move
+             Terms  Unl     Move   Mid     Move   Pre     Move  Date  Time
+BP         u N-10  346.23  + 2.00 368.48  + 2.00 390.46  + 2.00 03/27 18:00
+Marathon   b 1-10  362.33  + 5.56 380.15  + 5.56 397.95  + 5.56 03/27 18:00
+MPC-XOM    b 1-10  362.33  + 5.56 380.15  + 5.56 397.95  + 5.56 03/27 18:00
+PSX        u N-10  363.08  + 6.20 381.58  + 6.20 400.06  + 6.20 03/27 18:00
+Marathon   u N-10  366.73  + 3.50 387.73  + 3.50 408.71  + 3.50 03/27 18:00
+Valero     b N-10  367.43  + 4.37 384.44  + 4.37 401.94  + 4.36 03/27 18:00
+Valero     u N-10  368.32  + 6.55 380.22  + 6.55 404.39  + 6.54 03/27 18:00
+PSX        b 1-10  373.57  + 7.98 390.25  + 7.98 408.52  + 7.98 03/27 18:00
+Shell      b 125-3 386.47  + 5.06 401.96  + 5.06 421.45  + 5.07 03/27 18:00
+Chevron    b 1-10  388.74  + 5.00 405.87  + 5.00 421.68  + 5.00 03/27 18:00
+Texaco     b 1-10  388.74  + 5.00 405.87  + 5.00 421.68  + 5.00 03/27 18:00
+PBFEnergy  u Net   390.11  -  .14  -- --   -- -- 434.33  -  .06 03/27 18:00
+LOW RACK           346.23         368.48         390.46
+HIGH RACK          390.11         405.87         434.33
+RACK AVG           372.01         387.88         409.09
+CAP-AT-THE-RACK     22.64          22.64          22.66
+LCFS COST           17.3775        17.3775        17.3775
+OPIS SAN FRANCISCO DELIVERED SPOT (SRI)
+FOB SAN FRANCISCO 357.33         367.96         383.89
+BRD LOW RACK       362.33         380.15         397.95
+BRD HIGH RACK      388.74         405.87         421.68
+BRD RACK AVG       375.66         392.67         410.17
+UBD LOW RACK       346.23         368.48         390.46
+UBD HIGH RACK      390.11         387.73         434.33
+UBD RACK AVG       366.89         379.50         407.59
+CONT AVG-03/30     373.99         390.15         411.26
+CONT NET AVG-03/30 372.01         387.88         409.09
+CONT NET LOW-03/30 346.23         368.48         390.46
+CONT NET HI-03/30  390.11         405.87         434.33
+
+SAN FRANCISCO, CA
+LOW RETAIL              538.88
+AVG RETAIL              601.67
+LOW RETAIL EX-TAX       433.82
+AVG RETAIL EX-TAX       497.80
+
+SAN FRANCISCO, CA                                      2026-03-30 10:01:04 EDT
+                   **OPIS CONTRACT BENCHMARK FILE**
+  **OPIS NET CARB ULTRA LOW SULFUR DISTILLATE PRICES WITHOUT CAR COST **
+                                   No.2           No.2          Move
+             Terms  No2     Move    RD     Move   NRLM    Move  Date  Time
+BP         u N-10  494.08  +11.00 494.58  +11.00  -- --   -- -- 03/27 18:00
+Chevron    b 1-10  517.75  +20.90 518.25  +20.90  -- --   -- -- 03/27 18:00
+Texaco     b 1-10  517.75  +20.90 518.25  +20.90  -- --   -- -- 03/27 18:00
+Valero     u N-10  518.26  +20.74 518.76  +20.74  -- --   -- -- 03/27 18:00
+Valero     b N-10  521.29  +20.84  -- --   -- --  -- --   -- -- 03/27 18:00
+PBFEnergy  u Net   524.84  +18.16 525.34  +18.16  -- --   -- -- 03/27 18:00
+Shell      b 1-10  527.70  +16.09  -- --   -- --  -- --   -- -- 03/27 18:00
+LOW RACK           494.08         494.58          -- --
+HIGH RACK          527.70         525.34          -- --
+RACK AVG           517.38         515.04          -- --
+CAP-AT-THE-RACK     28.83          28.83          -- --
+LCFS COST           21.8430        21.8430        -- --
+OPIS SAN FRANCISCO DELIVERED SPOT (SRI)
+FOB SAN FRANCISCO 505.10         505.45          -- --
+BRD LOW RACK       517.75         518.25          -- --
+BRD HIGH RACK      527.70         518.25          -- --
+BRD RACK AVG       521.12         518.25          -- --
+UBD LOW RACK       494.08         494.58          -- --
+UBD HIGH RACK      524.84         525.34          -- --
+UBD RACK AVG       512.39         512.89          -- --
+CONT AVG-03/30     519.64         517.13          -- --
+CONT NET AVG-03/30 517.38         515.04          -- --
+CONT NET LOW-03/30 494.08         494.58          -- --
+CONT NET HI-03/30  527.70         525.34          -- --
+
+SACRAMENTO, CA                                         2026-03-30 10:01:04 EDT
+                   **OPIS CONTRACT BENCHMARK FILE**
+       **OPIS NET CARFG ETHANOL (10%) PRICES WITHOUT CAR COST **
+                                                                Move
+             Terms  Unl     Move   Mid     Move   Pre     Move  Date  Time
+IdemitsuA  u N-10  342.23  -  .75  -- --   -- --  -- --   -- -- 03/27 18:00
+BP         u N-10  358.73  + 2.00 389.73  + 2.00 415.46  + 2.00 03/27 18:00
+Marathon   b 1-10  359.78  + 5.05 377.60  + 5.05 395.40  + 5.05 03/27 18:00
+MPC-XOM    b 1-10  359.78  + 5.05 377.60  + 5.05 395.40  + 5.05 03/27 18:00
+Marathon   u N-10  364.98  + 3.50 386.98  + 3.50 407.96  + 3.50 03/27 18:00
+Valero     b N-10  365.02  + 4.34 382.03  + 4.34 399.83  + 4.33 03/27 18:00
+PSX        u N-10  370.72  + 6.20 388.22  + 6.20 405.70  + 6.20 03/27 18:00
+Valero     u N-10  370.77  + 6.55 387.85  + 6.55 413.22  + 6.54 03/27 18:00
+PSX        b 1-10  371.20  + 8.59 387.88  + 8.59 408.02  + 8.59 03/27 18:00
+FlyersEn   u N-10  374.23  + 7.25 390.23  + 7.25 406.21  + 7.25 03/27 19:00
+Shell      b 125-3 383.97  + 5.06 399.46  + 5.07 418.94  + 5.06 03/27 18:00
+Chevron    b 1-10  386.27  + 5.00 403.40  + 5.00 419.21  + 5.00 03/27 18:00
+Texaco     b 1-10  386.27  + 5.00 403.40  + 5.00 419.21  + 5.00 03/27 18:00
+PBFEnergy  u Net   393.86  +  .86  -- --   -- -- 449.83  + 4.80 03/27 18:00
+LOW RACK           342.23         377.60         395.40
+HIGH RACK          393.86         403.40         449.83
+RACK AVG           370.56         389.53         411.88
+CAP-AT-THE-RACK     22.64          22.64          22.66
+LCFS COST           17.3775        17.3775        17.3775
+OPIS SAN FRANCISCO DELIVERED SPOT (SRI)
+FOB SACRAMENTO    357.90         368.52         384.45
+BRD LOW RACK       359.78         377.60         395.40
+BRD HIGH RACK      386.27         403.40         419.21
+BRD RACK AVG       373.18         390.20         408.00
+UBD LOW RACK       342.23         386.98         405.70
+UBD HIGH RACK      393.86         390.23         449.83
+UBD RACK AVG       367.93         388.60         416.40
+CONT AVG-03/30     372.25         391.59         413.87
+CONT NET AVG-03/30 370.56         389.53         411.88
+CONT NET LOW-03/30 342.23         377.60         395.40
+CONT NET HI-03/30  393.86         403.40         449.83
+
+SACRAMENTO, CA
+LOW RETAIL              511.05
+AVG RETAIL              574.65
+LOW RETAIL EX-TAX       414.16
+AVG RETAIL EX-TAX       476.59
+
+Copyright, Oil Price Information Service
+Rack prices are adjusted in this report to reflect the wholesale rack prices
+modified to include/exclude the CAR values for locations with cost of compliance
+associated with carbon regulations. Subscriber fully understands that the CAR
+Adjusted Rack Price files MAY NOT match the official standard/terminal OPIS Rack
+Displays and agrees to fully inform those whom the subscriber does business with of
+the nature of the prices and how they may be different from standard/terminal OPIS
+rack prices. Subscriber accepts the risks inherent with using OPIS CAR Adjusted Rack
+Price files. https://www.opisnet.com/wp-content/uploads/2023/Car-Suppliers-for-Resources-Tab-1_9_24.pdf

@@ -32,6 +32,7 @@ import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import { api } from "../api";
+import { TanStackDataTable } from "../components/TanStackDataTable";
 import { tankLevelTone } from "../tankLimits";
 
 function formatDateTime(value) {
@@ -432,6 +433,28 @@ export function TankInformationPage({ jobber }) {
       averageFill
     };
   }, [latestRows, rows]);
+  const tankTableRows = useMemo(() => rows.map((row) => {
+    const site = siteById.get(row.siteId);
+    return {
+      ...row,
+      siteLabel: row.siteCode || site?.siteCode || row.siteId,
+      tankLabelResolved: row.tankLabel || `Tank ${row.atgTankId || "-"}`,
+      readTimeLabel: formatDateTime(row.readAt),
+      eventLabel: row.eventType === "delivery" ? "Refilled to ~80%" : "Pump drawdown"
+    };
+  }), [rows, siteById]);
+  const tankTableColumns = useMemo(() => [
+    { accessorKey: "readTimeLabel", header: "Read Time", cell: (info) => info.getValue(), meta: { minWidth: 180 } },
+    { accessorKey: "siteLabel", header: "Site", cell: (info) => info.getValue(), meta: { minWidth: 100 } },
+    { accessorKey: "tankLabelResolved", header: "Tank", cell: (info) => info.getValue(), meta: { minWidth: 140 } },
+    { accessorKey: "product", header: "Product", cell: (info) => info.getValue() || "-", meta: { minWidth: 120 } },
+    { accessorKey: "volume", header: "Volume (L)", cell: (info) => formatNumber(info.getValue(), 2), meta: { align: "right", minWidth: 110 } },
+    { accessorKey: "fillPercent", header: "Fill %", cell: (info) => `${formatNumber(info.getValue(), 1)}%`, meta: { align: "right", minWidth: 90 } },
+    { accessorKey: "deltaVolume", header: "Delta (L)", cell: (info) => formatNumber(info.getValue(), 2), meta: { align: "right", minWidth: 100 } },
+    { accessorKey: "ullage", header: "Ullage (L)", cell: (info) => formatNumber(info.getValue(), 2), meta: { align: "right", minWidth: 100 } },
+    { accessorKey: "safeUllage", header: "Safe Ullage", cell: (info) => formatNumber(info.getValue(), 2), meta: { align: "right", minWidth: 110 } },
+    { accessorKey: "eventLabel", header: "Event", cell: (info) => info.getValue(), meta: { minWidth: 150 } }
+  ], []);
 
   async function exportPdfReport() {
     try {
@@ -739,54 +762,16 @@ export function TankInformationPage({ jobber }) {
               <CardContent>
                 <Stack spacing={2}>
                   <Typography variant="h6">Tank Inventory Table</Typography>
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Read Time</TableCell>
-                          <TableCell>Site</TableCell>
-                          <TableCell>Tank</TableCell>
-                          <TableCell>Product</TableCell>
-                          <TableCell align="right">Volume (L)</TableCell>
-                          <TableCell align="right">Fill %</TableCell>
-                          <TableCell align="right">Delta (L)</TableCell>
-                          <TableCell align="right">Ullage (L)</TableCell>
-                          <TableCell align="right">Safe Ullage</TableCell>
-                          <TableCell>Event</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {rows.map((row) => {
-                          const site = siteById.get(row.siteId);
-                          return (
-                            <TableRow
-                              key={row.id}
-                              hover
-                              selected={detailRow?.tankId === row.tankId}
-                              onClick={() => setDetailTankId(row.tankId)}
-                              sx={{ cursor: "pointer" }}
-                            >
-                              <TableCell>{formatDateTime(row.readAt)}</TableCell>
-                              <TableCell>{row.siteCode || site?.siteCode || row.siteId}</TableCell>
-                              <TableCell>{row.tankLabel || `Tank ${row.atgTankId || "-"}`}</TableCell>
-                              <TableCell>{row.product || "-"}</TableCell>
-                              <TableCell align="right">{formatNumber(row.volume, 2)}</TableCell>
-                              <TableCell align="right">{formatNumber(row.fillPercent, 1)}%</TableCell>
-                              <TableCell align="right">{formatNumber(row.deltaVolume, 2)}</TableCell>
-                              <TableCell align="right">{formatNumber(row.ullage, 2)}</TableCell>
-                              <TableCell align="right">{formatNumber(row.safeUllage, 2)}</TableCell>
-                              <TableCell>{row.eventType === "delivery" ? "Refilled to ~80%" : "Pump drawdown"}</TableCell>
-                            </TableRow>
-                          );
-                        })}
-                        {!rows.length ? (
-                          <TableRow>
-                            <TableCell colSpan={10}>No tank history rows matching the current filters.</TableCell>
-                          </TableRow>
-                        ) : null}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
+                  <TanStackDataTable
+                    rows={tankTableRows}
+                    columns={tankTableColumns}
+                    globalSearchPlaceholder="Search tank inventory..."
+                    initialPageSize={10}
+                    emptyMessage="No tank history rows matching the current filters."
+                    getRowId={(row) => row.id}
+                    isRowSelected={(row) => detailRow?.tankId === row.tankId}
+                    onRowClick={(row) => setDetailTankId(row.tankId)}
+                  />
                 </Stack>
               </CardContent>
             </Card>

@@ -552,6 +552,30 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL,
       UNIQUE(site_id, transaction_id)
     );
+
+    CREATE TABLE IF NOT EXISTS allied_upgrade_cards (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      commands_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      source TEXT NOT NULL DEFAULT 'Typed',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      created_by TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS allied_upgrade_batches (
+      id TEXT PRIMARY KEY,
+      card_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      cards_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      site_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      scheduled_for TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      cancelled_at TIMESTAMPTZ,
+      cancelled_site_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      created_by TEXT NOT NULL
+    );
   `);
 
   await query(`
@@ -758,6 +782,21 @@ async function initDb() {
   await query(`
     CREATE INDEX IF NOT EXISTS allied_transactions_emv_tran_type_idx
     ON allied_transactions(emv_tran_type);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_upgrade_cards_created_at_idx
+    ON allied_upgrade_cards(created_at DESC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_upgrade_batches_scheduled_for_idx
+    ON allied_upgrade_batches(scheduled_for ASC);
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS allied_upgrade_batches_status_idx
+    ON allied_upgrade_batches(status, scheduled_for ASC);
   `);
 }
 

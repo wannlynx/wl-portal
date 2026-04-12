@@ -1,0 +1,71 @@
+flowchart TD
+    U[User]
+
+    subgraph Web["Web App"]
+        APP[apps/web/src/App.jsx]
+        APIJS[apps/web/src/api.js]
+        PT[PriceTablesPage.jsx]
+        MP[MobilePricesPage.jsx]
+        CSS[styles.css]
+    end
+
+    subgraph Api["API"]
+        SERVER[apps/api/src/server.js]
+        ENGINE[apps/api/src/pricing/engine.js]
+        REPO[apps/api/src/pricing/repositories.js]
+        DBJS[apps/api/src/db.js]
+        WB[applyWorkbookPricingTestData.js]
+        SEED[seed.js]
+    end
+
+    subgraph Db["PostgreSQL"]
+        CUST[(customers)]
+        CONTACTS[(customer_contacts)]
+        PROFILES[(customer_pricing_profiles)]
+        SOURCES[(pricing_source_snapshots)]
+        VALUES[(pricing_source_values)]
+        TAXES[(pricing_tax_schedules)]
+        RULES[(pricing_rule_sets)]
+        COMPONENTS[(pricing_rule_components)]
+        VENDORSETS[(pricing_rule_vendor_sets)]
+        OUTPUTS[(generated_customer_prices)]
+        EXPORTS[(pricing_export_templates / pricing_export_jobs)]
+    end
+
+    U --> APP
+    APP --> PT
+    APP --> MP
+    PT --> APIJS
+    MP --> APIJS
+    PT -. styling .-> CSS
+    MP -. styling .-> CSS
+
+    APIJS --> SERVER
+
+    SERVER --> REPO
+    SERVER --> ENGINE
+    ENGINE --> REPO
+    REPO --> DBJS
+
+    DBJS --> CUST
+    DBJS --> CONTACTS
+    DBJS --> PROFILES
+    DBJS --> SOURCES
+    DBJS --> VALUES
+    DBJS --> TAXES
+    DBJS --> RULES
+    DBJS --> COMPONENTS
+    DBJS --> VENDORSETS
+    DBJS --> OUTPUTS
+    DBJS --> EXPORTS
+
+    SEED --> DBJS
+    WB --> DBJS
+    WB --> SOURCES
+    WB --> VALUES
+    WB --> TAXES
+    WB --> RULES
+    WB --> COMPONENTS
+    WB --> VENDORSETS
+    WB --> CUST
+    WB --> PROFILES

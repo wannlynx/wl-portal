@@ -2,6 +2,7 @@ import { Component, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { SiteMap } from "../components/SiteMap";
+import { AlliedPortfolioTab } from "./AlliedPortfolioTab";
 
 const FILTERS = {
   all: "all",
@@ -37,6 +38,7 @@ export function PortfolioPage() {
   const [activeFilter, setActiveFilter] = useState(FILTERS.all);
   const [agentDraft, setAgentDraft] = useState("");
   const [agentLog, setAgentLog] = useState([]);
+  const [activeTab, setActiveTab] = useState("operations");
 
   useEffect(() => {
     api
@@ -109,6 +111,21 @@ export function PortfolioPage() {
 
   return (
     <div>
+      <div className="card">
+        <div className="inline">
+          <button type="button" className={activeTab === "operations" ? "tab-active" : ""} onClick={() => setActiveTab("operations")}>
+            Operations
+          </button>
+          <button type="button" className={activeTab === "allied" ? "tab-active" : ""} onClick={() => setActiveTab("allied")}>
+            Allied
+          </button>
+        </div>
+      </div>
+
+      {activeTab === "allied" ? (
+        <AlliedPortfolioTab />
+      ) : (
+        <>
       <div className="stats-row">
         <button type="button" className={`metric-card metric-card-button${activeFilter === FILTERS.all ? " metric-card-active" : ""}`} onClick={() => { setActiveFilter(FILTERS.all); setSelectedSite(null); }}>
           <div className="metric-label">Total Sites</div>
@@ -255,6 +272,8 @@ export function PortfolioPage() {
           </table>
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 }

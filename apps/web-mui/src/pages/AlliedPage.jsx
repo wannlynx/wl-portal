@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -34,7 +35,9 @@ import LocalGasStationIcon from "@mui/icons-material/LocalGasStation";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import ReactECharts from "echarts-for-react";
 import { useSearchParams } from "react-router-dom";
+import { flexRender, getCoreRowModel, getFilteredRowModel, getSortedRowModel, useReactTable } from "@tanstack/react-table";
 import { api, getToken } from "../api";
+import { TanStackDataTable } from "../components/TanStackDataTable";
 
 const PRESETS = [
   { label: "Today", value: "today" },
@@ -156,6 +159,84 @@ function BarChart({ rows, title, valueKey = "count", onSelect }) {
   );
 }
 
+function ChartDataTable({ rows, columns }) {
+  const [sorting, setSorting] = useState([]);
+  const [columnFilters, setColumnFilters] = useState([]);
+  const table = useReactTable({
+    data: rows,
+    columns,
+    state: { sorting, columnFilters },
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel()
+  });
+
+  return (
+    <Stack spacing={1.25}>
+      <TableContainer component={Paper} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => {
+                  const canSort = header.column.getCanSort();
+                  const sort = header.column.getIsSorted();
+                  return (
+                    <TableCell
+                      key={header.id}
+                      align={header.column.columnDef.meta?.align || "left"}
+                      sx={{ verticalAlign: "top", minWidth: header.column.columnDef.meta?.minWidth || 120 }}
+                    >
+                      <Stack spacing={1}>
+                        <Button
+                          variant="text"
+                          color="inherit"
+                          onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                          sx={{ justifyContent: "flex-start", px: 0, minWidth: 0, textTransform: "none", fontWeight: 700 }}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {sort === "asc" ? " ↑" : sort === "desc" ? " ↓" : ""}
+                        </Button>
+                        {header.column.getCanFilter() ? (
+                          <TextField
+                            size="small"
+                            placeholder="Search"
+                            value={header.column.getFilterValue() ?? ""}
+                            onChange={(event) => header.column.setFilterValue(event.target.value)}
+                          />
+                        ) : null}
+                      </Stack>
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableHead>
+          <TableBody>
+            {table.getRowModel().rows.length ? table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id} hover>
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id} align={cell.column.columnDef.meta?.align || "left"}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            )) : (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <Typography color="text.secondary">No matching rows.</Typography>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Stack>
+  );
+}
+
 export function AlliedPage() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -262,6 +343,28 @@ export function AlliedPage() {
   const topPump = pumps[0] || null;
   const topIssue = issues[0] || null;
   const renderTabSummary = (items) => (isMobile ? <CompactSummaryStrip items={items} /> : <SummaryStrip items={items} />);
+  const trendColumns = useMemo(() => [
+    { accessorKey: "label", header: "Day", cell: (info) => info.getValue() },
+    { accessorKey: "transactions", header: "Transactions", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 140 } },
+    { accessorKey: "aborts", header: "Aborts", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 120 } },
+    { accessorKey: "sales", header: "Sales", cell: (info) => money(info.getValue()), meta: { align: "right", minWidth: 140 } }
+  ], []);
+  const denialColumns = useMemo(() => [
+    { accessorKey: "label", header: "Denial Reason", cell: (info) => info.getValue(), meta: { minWidth: 220 } },
+    { accessorKey: "count", header: "Count", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 120 } }
+  ], []);
+  const paymentColumns = useMemo(() => [
+    { accessorKey: "label", header: "Payment Type", cell: (info) => info.getValue(), meta: { minWidth: 220 } },
+    { accessorKey: "count", header: "Count", cell: (info) => Number(info.getValue() || 0).toLocaleString(), meta: { align: "right", minWidth: 120 } }
+  ], []);
+  const transactionColumns = useMemo(() => [
+    { accessorKey: "timestamp", header: "Time", cell: (info) => dateTime(info.getValue(), info.row.original.timezone), meta: { minWidth: 180 } },
+    { accessorKey: "transactionId", header: "Transaction", cell: (info) => info.getValue(), meta: { minWidth: 140 } },
+    { accessorKey: "fuelPositionId", header: "Pump", cell: (info) => info.getValue() || "-", meta: { minWidth: 90 } },
+    { accessorKey: "paymentType", header: "Payment", cell: (info) => info.getValue() || "-", meta: { minWidth: 140 } },
+    { accessorKey: "emvStatus", header: "Status", cell: (info) => info.getValue() || "-", meta: { minWidth: 120 } },
+    { accessorKey: "totalAmount", header: "Total", cell: (info) => money(info.getValue()), meta: { align: "right", minWidth: 120 } }
+  ], []);
 
   function setSiteId(nextSiteId, nextTab = "overview") {
     const next = new URLSearchParams(searchParams);
@@ -319,9 +422,17 @@ export function AlliedPage() {
           <Typography color="text.secondary">Use portfolio selection first, then drill into one site at a time.</Typography>
         </Box>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
-          <TextField select size="small" label="Preset" value={filters.preset} onChange={(event) => setFilters({ preset: event.target.value, from: "", to: "" })} sx={{ minWidth: 140 }}>
-            {PRESETS.map((preset) => <MenuItem key={preset.value} value={preset.value}>{preset.label}</MenuItem>)}
-          </TextField>
+          <Autocomplete
+            size="small"
+            options={PRESETS}
+            value={PRESETS.find((preset) => preset.value === filters.preset) || null}
+            onChange={(_event, nextPreset) => setFilters({ preset: nextPreset?.value || "", from: "", to: "" })}
+            getOptionLabel={(option) => option.label}
+            isOptionEqualToValue={(option, value) => option.value === value.value}
+            renderInput={(params) => <TextField {...params} label="Preset" placeholder="Type a preset" />}
+            sx={{ minWidth: 180 }}
+            clearOnEscape
+          />
           <TextField size="small" type="date" label="From" value={filters.from} onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value, preset: "" }))} InputLabelProps={{ shrink: true }} />
           <TextField size="small" type="date" label="To" value={filters.to} onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value, preset: "" }))} InputLabelProps={{ shrink: true }} />
         </Stack>
@@ -405,6 +516,7 @@ export function AlliedPage() {
                   </Section>
                   <Section title="Trend" subtitle="Transactions, aborts, and sales for the selected window.">
                     <BarChart rows={trendRows} title="Daily Transactions" valueKey="transactions" />
+                    <TanStackDataTable rows={trendRows} columns={trendColumns} globalSearchPlaceholder="Search trend rows..." initialPageSize={5} />
                   </Section>
                 </Stack>
               ) : null}
@@ -445,6 +557,7 @@ export function AlliedPage() {
                     <Grid size={{ xs: 12, xl: 6 }}>
                       <Section title="Denial Mix" subtitle="Tap a denial reason to narrow the transaction list.">
                         <BarChart rows={denialMix} title="Denial Reasons" onSelect={(row) => applyDrill({ denialReason: row.label }, "transactions")} />
+                        <TanStackDataTable rows={denialMix} columns={denialColumns} globalSearchPlaceholder="Search denial rows..." initialPageSize={5} />
                       </Section>
                     </Grid>
                   </Grid>
@@ -484,6 +597,7 @@ export function AlliedPage() {
                     <Grid size={{ xs: 12, xl: 7 }}>
                       <Section title="Payment Mix" subtitle="Tap a payment type to narrow the list.">
                         <BarChart rows={paymentMix} title="Payment Types" onSelect={(row) => applyDrill({ paymentType: row.label }, "transactions")} />
+                        <TanStackDataTable rows={paymentMix} columns={paymentColumns} globalSearchPlaceholder="Search payment rows..." initialPageSize={5} />
                       </Section>
                     </Grid>
                   </Grid>
@@ -504,14 +618,22 @@ export function AlliedPage() {
                     <Grid size={{ xs: 12, xl: 4 }}>
                       <Section title="Quick Filters" subtitle="Keep phone filtering compact.">
                         <Stack spacing={1.25}>
-                          <TextField select size="small" label="Payment Type" value={drill.paymentType} onChange={(event) => applyDrill({ paymentType: event.target.value })}>
-                            <MenuItem value="">All</MenuItem>
-                            {(summary?.filterOptions?.paymentTypes || []).map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
-                          </TextField>
-                          <TextField select size="small" label="EMV Status" value={drill.emvStatus} onChange={(event) => applyDrill({ emvStatus: event.target.value })}>
-                            <MenuItem value="">All</MenuItem>
-                            {(summary?.filterOptions?.emvStatuses || []).map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
-                          </TextField>
+                          <Autocomplete
+                            size="small"
+                            options={summary?.filterOptions?.paymentTypes || []}
+                            value={drill.paymentType || null}
+                            onChange={(_event, nextValue) => applyDrill({ paymentType: nextValue || "" })}
+                            renderInput={(params) => <TextField {...params} label="Payment Type" placeholder="Type a payment type" />}
+                            clearOnEscape
+                          />
+                          <Autocomplete
+                            size="small"
+                            options={summary?.filterOptions?.emvStatuses || []}
+                            value={drill.emvStatus || null}
+                            onChange={(_event, nextValue) => applyDrill({ emvStatus: nextValue || "" })}
+                            renderInput={(params) => <TextField {...params} label="EMV Status" placeholder="Type a status" />}
+                            clearOnEscape
+                          />
                           <Button variant="outlined" onClick={() => setDrill({ fuelPositionId: "", paymentType: "", emvStatus: "", denialReason: "", minFlaggedOnly: "" })}>Reset Drill Filters</Button>
                         </Stack>
                       </Section>
@@ -544,23 +666,7 @@ export function AlliedPage() {
                             ))}
                           </Stack>
                         ) : (
-                          <TableContainer component={Paper} variant="outlined">
-                            <Table size="small">
-                              <TableHead><TableRow><TableCell>Time</TableCell><TableCell>Transaction</TableCell><TableCell>Pump</TableCell><TableCell>Payment</TableCell><TableCell>Status</TableCell><TableCell align="right">Total</TableCell></TableRow></TableHead>
-                              <TableBody>
-                                {transactions.rows.map((row) => (
-                                  <TableRow key={row.id} hover selected={selectedTransactionId === row.id} onClick={() => setSelectedTransactionId(row.id)} sx={{ cursor: "pointer" }}>
-                                    <TableCell>{dateTime(row.timestamp, row.timezone)}</TableCell>
-                                    <TableCell>{row.transactionId}</TableCell>
-                                    <TableCell>{row.fuelPositionId || "-"}</TableCell>
-                                    <TableCell>{row.paymentType}</TableCell>
-                                    <TableCell>{row.emvStatus || "-"}</TableCell>
-                                    <TableCell align="right">{money(row.totalAmount)}</TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </TableContainer>
+                          <TanStackDataTable rows={transactions.rows} columns={transactionColumns} globalSearchPlaceholder="Search transactions..." initialPageSize={10} />
                         )}
                       </Section>
                     </Grid>

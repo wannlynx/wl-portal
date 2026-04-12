@@ -6,6 +6,7 @@ import { WorkQueuePage } from "./pages/WorkQueuePage";
 import { TankInformationPage } from "./pages/TankInformationPage";
 import { TankChartsPage } from "./pages/TankChartsPage";
 import { AlliedPage } from "./pages/AlliedPage";
+import { AlliedMgmtPage } from "./pages/AlliedMgmtPage";
 import { SiteDetailPage } from "./pages/SiteDetailPage";
 import { LayoutPage } from "./pages/LayoutPage";
 import { LayoutEditorPage } from "./pages/LayoutEditorPage";
@@ -29,6 +30,7 @@ function AppFrame({ children, user, jobber, onLogout }) {
     location.pathname.startsWith("/mobile-prices") ? "Mobile Prices" :
     location.pathname.startsWith("/price-tables") ? "Price Tables" :
     location.pathname.startsWith("/pricing") ? "Pricing" :
+    location.pathname.startsWith("/allied-mgmt") ? "Allied Management" :
     location.pathname.startsWith("/allied") ? "Allied Transactions" :
     location.pathname.startsWith("/work-queue") ? "Service Work Queue" :
     location.pathname.startsWith("/tank-information") ? "Tank Information" :
@@ -55,6 +57,9 @@ function AppFrame({ children, user, jobber, onLogout }) {
           </NavLink>
           <NavLink to="/allied" className={({ isActive }) => (isActive ? "active" : "") }>
             Allied
+          </NavLink>
+          <NavLink to="/allied-mgmt" className={({ isActive }) => (isActive ? "active" : "") }>
+            Allied Mgmt
           </NavLink>
           {user?.jobberRole === "admin" || user?.role === "system_manager" ? (
             <NavLink to="/management" className={({ isActive }) => (isActive ? "active" : "") }>
@@ -111,6 +116,7 @@ function ProtectedApp({ user, jobber, onLogout, onJobberUpdated }) {
         <Route path="/tank-information" element={<TankInformationPage />} />
         <Route path="/tank-charts" element={<TankChartsPage />} />
         <Route path="/allied" element={<AlliedPage />} />
+        <Route path="/allied-mgmt" element={<AlliedMgmtPage />} />
         <Route path="/management" element={user?.jobberRole === "admin" || user?.role === "system_manager" ? <ManagementPage /> : <Navigate to="/" replace />} />
         <Route
           path="/pricing"

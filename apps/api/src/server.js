@@ -1,3 +1,4 @@
+require("./loadEnv");
 const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
@@ -8,6 +9,7 @@ const { registerClient, sendEvent, broadcast } = require("./events");
 const { query, tx, initDb, hasDbConfig } = require("./db");
 const { seedIfEmpty } = require("./seed");
 const { encryptJson, decryptJson } = require("./secrets");
+const { buildEbolCsv, fetchEbolStatus, getEbolOverview } = require("./ebol");
 const {
   createCustomer,
   createCustomerContact,
@@ -75,6 +77,44 @@ function alliedDefaultDateRange() {
 function alliedTextCsv(value) {
   const normalized = value == null ? "" : String(value);
   return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, "\"\"")}"` : normalized;
+}
+
+function alliedUpgradeCardFromRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    commands: row.commandsJson || [],
+    source: row.source || "Typed",
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    createdBy: row.createdBy
+  };
+}
+
+function alliedUpgradeBatchFromRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    cardIds: row.cardIds || [],
+    cards: row.cardsJson || [],
+    siteIds: row.siteIds || [],
+    scheduledFor: row.scheduledFor,
+    status: row.status,
+    cancelledAt: row.cancelledAt || "",
+    cancelledSiteIds: row.cancelledSiteIds || [],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    createdBy: row.createdBy
+  };
+}
+
+function normalizeUpgradeCommands(body) {
+  if (Array.isArray(body?.commands)) {
+    return body.commands.map((line) => String(line || "").trim()).filter(Boolean);
+  }
+  const text = String(body?.commandsText || "").trim();
+  return text ? text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) : [];
 }
 
 function alliedMaskedPan(first8, last4) {
@@ -577,6 +617,12 @@ async function opisSpotAuthenticate(user) {
   });
 
   if (!response.ok) {
+    const bodyText = await response.text();
+    if (/username or password is incorrect/i.test(bodyText)) {
+      const error = new Error("OPIS Spot username or password is incorrect. Re-save the OPIS credentials in Admin.");
+      error.statusCode = 400;
+      throw error;
+    }
     throw new Error(`OPIS spot auth failed with status ${response.status}`);
   }
 
@@ -2461,6 +2507,72 @@ app.get("/health", (_req, res) => {
 });
 
 app.get(
+  "/ebols/overview",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const payload = await getEbolOverview({
+      startDate: String(req.query.startDate || ""),
+      endDate: String(req.query.endDate || ""),
+      status: String(req.query.status || ""),
+      supplierId: String(req.query.supplierId || ""),
+      terminalId: String(req.query.terminalId || ""),
+      siteId: String(req.query.siteId || ""),
+      exceptionsOnly: String(req.query.exceptionsOnly || "")
+    });
+    res.json(payload);
+  })
+);
+
+app.get(
+  "/ebols/:bolNumber/status",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const payload = await fetchEbolStatus(req.params.bolNumber);
+    res.json(payload);
+  })
+);
+
+app.get(
+  "/ebols/export.json",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const payload = await getEbolOverview({
+      startDate: String(req.query.startDate || ""),
+      endDate: String(req.query.endDate || ""),
+      status: String(req.query.status || ""),
+      supplierId: String(req.query.supplierId || ""),
+      terminalId: String(req.query.terminalId || ""),
+      siteId: String(req.query.siteId || ""),
+      exceptionsOnly: String(req.query.exceptionsOnly || "")
+    });
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=\"ebols-${payload.range.startDate}-to-${payload.range.endDate}.json\"`);
+    res.send(JSON.stringify(payload, null, 2));
+  })
+);
+
+app.get(
+  "/ebols/export.csv",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const payload = await getEbolOverview({
+      startDate: String(req.query.startDate || ""),
+      endDate: String(req.query.endDate || ""),
+      status: String(req.query.status || ""),
+      supplierId: String(req.query.supplierId || ""),
+      terminalId: String(req.query.terminalId || ""),
+      siteId: String(req.query.siteId || ""),
+      exceptionsOnly: String(req.query.exceptionsOnly || "")
+    });
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=\"ebols-${payload.range.startDate}-to-${payload.range.endDate}.csv\"`);
+    res.send(buildEbolCsv(payload.records));
+  })
+);
+
+app.get(
   "/market/pricing",
   requireAuth,
   asyncHandler(async (req, res) => {
@@ -2933,7 +3045,7 @@ app.patch(
     await query(
       `UPDATE jobbers
        SET name=$1, logo_url=$2, tank_limits_json=$3, updated_at=$4
-       WHERE id=$4`,
+       WHERE id=$5`,
       [
         body.name?.trim() || current.name,
         typeof body.logoUrl === "string" ? body.logoUrl.trim() : current.logoUrl,
@@ -3625,6 +3737,259 @@ app.get(
       tanks: tanks.rows,
       pumps: pumps.rows
     });
+  })
+);
+
+app.get(
+  "/allied-upgrades/cards",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await query(
+      `SELECT
+         id, name, commands_json AS "commandsJson", source,
+         created_at AS "createdAt", updated_at AS "updatedAt", created_by AS "createdBy"
+       FROM allied_upgrade_cards
+       ORDER BY created_at ASC`
+    );
+    res.json(result.rows.map(alliedUpgradeCardFromRow));
+  })
+);
+
+app.post(
+  "/allied-upgrades/cards",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const name = String(body.name || "").trim();
+    const commands = normalizeUpgradeCommands(body);
+    const source = String(body.source || "Typed").trim() || "Typed";
+    if (!name || !commands.length) {
+      return res.status(400).json({ error: "Card name and ANDI commands are required." });
+    }
+
+    const now = new Date().toISOString();
+    const id = `card-${crypto.randomUUID()}`;
+    const result = await query(
+      `INSERT INTO allied_upgrade_cards (
+         id, name, commands_json, source, created_at, updated_at, created_by
+       ) VALUES ($1, $2, $3::jsonb, $4, $5, $5, $6)
+       RETURNING
+         id, name, commands_json AS "commandsJson", source,
+         created_at AS "createdAt", updated_at AS "updatedAt", created_by AS "createdBy"`,
+      [id, name, JSON.stringify(commands), source, now, req.user.userId]
+    );
+    res.status(201).json(alliedUpgradeCardFromRow(result.rows[0]));
+  })
+);
+
+app.patch(
+  "/allied-upgrades/cards/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const existing = await query(
+      `SELECT
+         id, name, commands_json AS "commandsJson", source,
+         created_at AS "createdAt", updated_at AS "updatedAt", created_by AS "createdBy"
+       FROM allied_upgrade_cards
+       WHERE id=$1`,
+      [req.params.id]
+    );
+    if (!existing.rowCount) return res.status(404).json({ error: "Card not found" });
+    const current = alliedUpgradeCardFromRow(existing.rows[0]);
+    const body = req.body || {};
+    const name = body.name != null ? String(body.name).trim() : current.name;
+    const commands = body.commands != null || body.commandsText != null ? normalizeUpgradeCommands(body) : current.commands;
+    const source = body.source != null ? String(body.source).trim() || current.source : current.source;
+    if (!name || !commands.length) {
+      return res.status(400).json({ error: "Card name and ANDI commands are required." });
+    }
+
+    const now = new Date().toISOString();
+    const result = await query(
+      `UPDATE allied_upgrade_cards
+       SET name=$2, commands_json=$3::jsonb, source=$4, updated_at=$5
+       WHERE id=$1
+       RETURNING
+         id, name, commands_json AS "commandsJson", source,
+         created_at AS "createdAt", updated_at AS "updatedAt", created_by AS "createdBy"`,
+      [req.params.id, name, JSON.stringify(commands), source, now]
+    );
+    res.json(alliedUpgradeCardFromRow(result.rows[0]));
+  })
+);
+
+app.delete(
+  "/allied-upgrades/cards/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await tx(async (client) => {
+      await client.query(
+        `UPDATE allied_upgrade_batches
+         SET
+           card_ids = COALESCE(
+             (
+               SELECT jsonb_agg(value)
+               FROM jsonb_array_elements_text(card_ids) AS value
+               WHERE value <> $1
+             ),
+             '[]'::jsonb
+           ),
+           cards_json = COALESCE(
+             (
+               SELECT jsonb_agg(card)
+               FROM jsonb_array_elements(cards_json) AS card
+               WHERE card->>'id' <> $1
+             ),
+             '[]'::jsonb
+           ),
+           updated_at = NOW()
+         WHERE card_ids ? $1`,
+        [req.params.id]
+      );
+      await client.query(`DELETE FROM allied_upgrade_cards WHERE id=$1`, [req.params.id]);
+    });
+    res.status(204).end();
+  })
+);
+
+app.get(
+  "/allied-upgrades/batches",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userSiteIds = await siteIdsForUser(req.user);
+    if (!userSiteIds.length) return res.json([]);
+    const result = await query(
+      `SELECT
+         id, card_ids AS "cardIds", cards_json AS "cardsJson", site_ids AS "siteIds",
+         scheduled_for AS "scheduledFor", status, cancelled_at AS "cancelledAt",
+         cancelled_site_ids AS "cancelledSiteIds", created_at AS "createdAt",
+         updated_at AS "updatedAt", created_by AS "createdBy"
+       FROM allied_upgrade_batches
+       WHERE site_ids ?| $1::text[]
+       ORDER BY scheduled_for ASC, created_at ASC`,
+      [userSiteIds]
+    );
+    res.json(result.rows.map(alliedUpgradeBatchFromRow));
+  })
+);
+
+app.post(
+  "/allied-upgrades/batches",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const cardIds = Array.from(new Set((Array.isArray(body.cardIds) ? body.cardIds : []).map((value) => String(value || "").trim()).filter(Boolean)));
+    const siteIds = Array.from(new Set((Array.isArray(body.siteIds) ? body.siteIds : []).map((value) => String(value || "").trim()).filter(Boolean)));
+    const scheduledAt = normalizeDateParam(body.scheduledFor, "");
+    if (!cardIds.length) return res.status(400).json({ error: "Select at least one upgrade card." });
+    if (!siteIds.length) return res.status(400).json({ error: "Select at least one site." });
+    if (!scheduledAt) return res.status(400).json({ error: "Enter a valid schedule time." });
+
+    const userSiteIds = await siteIdsForUser(req.user);
+    const forbidden = siteIds.filter((siteId) => !userSiteIds.includes(siteId));
+    if (forbidden.length) {
+      return res.status(403).json({ error: "One or more sites are not accessible." });
+    }
+
+    const cardsResult = await query(
+      `SELECT
+         id, name, commands_json AS "commandsJson", source,
+         created_at AS "createdAt", updated_at AS "updatedAt", created_by AS "createdBy"
+       FROM allied_upgrade_cards
+       WHERE id = ANY($1::text[])
+       ORDER BY created_at ASC`,
+      [cardIds]
+    );
+    if (cardsResult.rowCount !== cardIds.length) {
+      return res.status(400).json({ error: "One or more selected cards do not exist." });
+    }
+
+    const now = new Date().toISOString();
+    const id = `batch-${crypto.randomUUID()}`;
+    const result = await query(
+      `INSERT INTO allied_upgrade_batches (
+         id, card_ids, cards_json, site_ids, scheduled_for, status, cancelled_at,
+         cancelled_site_ids, created_at, updated_at, created_by
+       ) VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5, 'pending', NULL, '[]'::jsonb, $6, $6, $7)
+       RETURNING
+         id, card_ids AS "cardIds", cards_json AS "cardsJson", site_ids AS "siteIds",
+         scheduled_for AS "scheduledFor", status, cancelled_at AS "cancelledAt",
+         cancelled_site_ids AS "cancelledSiteIds", created_at AS "createdAt",
+         updated_at AS "updatedAt", created_by AS "createdBy"`,
+      [id, JSON.stringify(cardIds), JSON.stringify(cardsResult.rows.map(alliedUpgradeCardFromRow)), JSON.stringify(siteIds), scheduledAt, now, req.user.userId]
+    );
+    res.status(201).json(alliedUpgradeBatchFromRow(result.rows[0]));
+  })
+);
+
+app.patch(
+  "/allied-upgrades/batches/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const currentResult = await query(
+      `SELECT
+         id, card_ids AS "cardIds", cards_json AS "cardsJson", site_ids AS "siteIds",
+         scheduled_for AS "scheduledFor", status, cancelled_at AS "cancelledAt",
+         cancelled_site_ids AS "cancelledSiteIds", created_at AS "createdAt",
+         updated_at AS "updatedAt", created_by AS "createdBy"
+       FROM allied_upgrade_batches
+       WHERE id=$1`,
+      [req.params.id]
+    );
+    if (!currentResult.rowCount) return res.status(404).json({ error: "Batch not found" });
+    const current = alliedUpgradeBatchFromRow(currentResult.rows[0]);
+    const body = req.body || {};
+    let scheduledFor = current.scheduledFor;
+    let status = current.status;
+    let cancelledAt = current.cancelledAt || "";
+    const cancelledSiteIds = new Set(current.cancelledSiteIds || []);
+    let changed = false;
+
+    if (body.scheduledFor != null) {
+      const nextScheduledAt = normalizeDateParam(body.scheduledFor, "");
+      if (!nextScheduledAt) return res.status(400).json({ error: "Enter a valid schedule time." });
+      scheduledFor = nextScheduledAt;
+      if (status !== "cancelled") status = "pending";
+      changed = true;
+    }
+
+    if (body.cancelSiteId != null) {
+      cancelledSiteIds.add(String(body.cancelSiteId));
+      changed = true;
+    }
+
+    if (body.cancelBatch) {
+      status = "cancelled";
+      cancelledAt = cancelledAt || new Date().toISOString();
+      current.siteIds.forEach((siteId) => cancelledSiteIds.add(siteId));
+      changed = true;
+    }
+
+    if (body.status != null) {
+      status = String(body.status || "pending");
+      changed = true;
+    }
+
+    if (!changed) {
+      return res.json(current);
+    }
+
+    if (!cancelledAt && status === "cancelled") {
+      cancelledAt = new Date().toISOString();
+    }
+
+    const result = await query(
+      `UPDATE allied_upgrade_batches
+       SET scheduled_for=$2, status=$3, cancelled_at=$4, cancelled_site_ids=$5::jsonb, updated_at=$6
+       WHERE id=$1
+       RETURNING
+         id, card_ids AS "cardIds", cards_json AS "cardsJson", site_ids AS "siteIds",
+         scheduled_for AS "scheduledFor", status, cancelled_at AS "cancelledAt",
+         cancelled_site_ids AS "cancelledSiteIds", created_at AS "createdAt",
+         updated_at AS "updatedAt", created_by AS "createdBy"`,
+      [req.params.id, scheduledFor, status, cancelledAt || null, JSON.stringify([...cancelledSiteIds]), new Date().toISOString()]
+    );
+    res.json(alliedUpgradeBatchFromRow(result.rows[0]));
   })
 );
 

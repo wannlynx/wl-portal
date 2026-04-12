@@ -3,6 +3,7 @@ import {
   AppBar,
   Alert,
   Box,
+  Button,
   Chip,
   CssBaseline,
   Divider,
@@ -23,7 +24,10 @@ import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import OilBarrelIcon from "@mui/icons-material/OilBarrel";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
 import PaymentsIcon from "@mui/icons-material/Payments";
+import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
+import UpgradeIcon from "@mui/icons-material/SystemUpdateAlt";
 import TableChartIcon from "@mui/icons-material/TableChart";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import MenuIcon from "@mui/icons-material/Menu";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -35,6 +39,9 @@ import { AdminPreviewPage } from "./pages/AdminPreviewPage";
 import { TankInformationPage } from "./pages/TankInformationPage";
 import { TankChartsPage } from "./pages/TankChartsPage";
 import { AlliedPage } from "./pages/AlliedPage";
+import { AlliedMgmtPage } from "./pages/AlliedMgmtPage";
+import { AlliedUpgradesPage } from "./pages/AlliedUpgradesPage";
+import { EbolPage } from "./pages/EbolPage";
 import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { LoginPage } from "./pages/LoginPage";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
@@ -48,6 +55,9 @@ const navItems = [
   { label: "Tank Info", to: "/tank-information", icon: <OilBarrelIcon /> },
   { label: "Tank Charts", to: "/tank-charts", icon: <ShowChartIcon /> },
   { label: "Allied", to: "/allied", icon: <PaymentsIcon /> },
+  { label: "Allied Mgmt", to: "/allied-mgmt", icon: <ManageAccountsIcon /> },
+  { label: "Allied Upgrades", to: "/allied-upgrades", icon: <UpgradeIcon /> },
+  { label: "eBOL", to: "/ebols", icon: <ReceiptLongIcon /> },
   { label: "Pricing", to: "/pricing", icon: <MonetizationOnIcon /> },
   { label: "Price Tables", to: "/price-tables", icon: <TableChartIcon /> },
   { label: "Admin", to: "/admin", icon: <AdminPanelSettingsIcon /> }
@@ -160,17 +170,17 @@ function PageShell({ user, jobber, onLogout, children }) {
               </>
             )}
           </Box>
-          <Chip
+          <Button
             color="primary"
             variant="outlined"
-            label={location.pathname === "/" ? "Map" : "Primary UI"}
             onClick={
               location.pathname === "/"
                 ? () => window.dispatchEvent(new CustomEvent("petroleum:dashboard-home"))
-                : undefined
+                : () => window.dispatchEvent(new CustomEvent("petroleum:reset-filters"))
             }
-            sx={location.pathname === "/" ? { cursor: "pointer" } : undefined}
-          />
+          >
+            {location.pathname === "/" ? "Map" : "Reset"}
+          </Button>
         </Toolbar>
       </AppBar>
 
@@ -219,6 +229,9 @@ function ProtectedApp({ user, jobber, onLogout, onJobberUpdated }) {
           <Route path="/tank-information" element={<TankInformationPage jobber={jobber} />} />
           <Route path="/tank-charts" element={<TankChartsPage jobber={jobber} />} />
           <Route path="/allied" element={<AlliedPage />} />
+          <Route path="/allied-mgmt" element={<AlliedMgmtPage />} />
+          <Route path="/allied-upgrades" element={<AlliedUpgradesPage />} />
+          <Route path="/ebols" element={<EbolPage />} />
           <Route path="/pricing" element={<PricingPreviewPage />} />
           <Route path="/price-tables" element={<PriceTablesPage />} />
           <Route path="/admin" element={<AdminPreviewPage user={user} jobber={jobber} onJobberUpdated={onJobberUpdated} />} />

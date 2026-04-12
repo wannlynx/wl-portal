@@ -25,7 +25,7 @@ import FilterListIcon from "@mui/icons-material/FilterList";
 import TableRowsIcon from "@mui/icons-material/TableRows";
 import { api } from "../api";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { gaugeBandRanges, gaugeColorStops, tankLevelTone } from "../tankLimits";
+import { gaugeBandRanges, gaugeColorStops, resolveTankLimits, tankLevelTone } from "../tankLimits";
 
 const rangeOptions = [
   { value: "24h", label: "24 Hours", hours: 24 },
@@ -54,7 +54,50 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString();
 }
 
-function buildYAxisTicks(minValue, maxValue) {
+function formatTimeToThreshold(hours) {
+  if (!Number.isFinite(hours) || hours < 0) return "-";
+  if (hours < 1) return "<1 hour";
+  if (hours < 24) return `${Math.round(hours)} hours`;
+  const days = hours / 24;
+  if (days < 7) return `${days.toFixed(days < 2 ? 1 : 0)} days`;
+  const weeks = days / 7;
+  return `${weeks.toFixed(weeks < 2 ? 1 : 0)} weeks`;
+}
+
+function buildLowerYellowEstimate(tank, tankLimits) {
+  if (!tank?.points?.length) {
+    return { label: "No estimate", caption: "No history available for this tank." };
+  }
+
+  const latest = tank.points[tank.points.length - 1];
+  const threshold = resolveTankLimits(tankLimits, tank.product).lowYellowMax;
+  if (latest.fillPercent <= threshold) {
+    return { label: "In lower yellow", caption: `At or below ${threshold}% already.` };
+  }
+
+  if (tank.points.length < 2) {
+    return { label: "No estimate", caption: "Need more history to estimate drain rate." };
+  }
+
+  const earliest = tank.points[0];
+  const elapsedHours = (new Date(latest.readAt).getTime() - new Date(earliest.readAt).getTime()) / (1000 * 60 * 60);
+  if (!Number.isFinite(elapsedHours) || elapsedHours <= 0) {
+    return { label: "No estimate", caption: "Not enough elapsed time in the current range." };
+  }
+
+  const drainRatePerHour = (Number(earliest.fillPercent) - Number(latest.fillPercent)) / elapsedHours;
+  if (!Number.isFinite(drainRatePerHour) || drainRatePerHour <= 0.02) {
+    return { label: "Stable / filling", caption: `Not draining toward ${threshold}% in this range.` };
+  }
+
+  const hoursLeft = (Number(latest.fillPercent) - threshold) / drainRatePerHour;
+  return {
+    label: formatTimeToThreshold(hoursLeft),
+    caption: `Estimated time until ${threshold}% at ${drainRatePerHour.toFixed(2)}% per hour.`
+  };
+}
+
+function buildYAxisTicks(minValue = 0, maxValue = 100) {
   const start = Math.max(0, Math.floor(minValue / 10) * 10);
   const end = Math.min(100, Math.ceil(maxValue / 10) * 10);
   const ticks = [];
@@ -121,6 +164,8 @@ function buildTrendOption(tank, minValue, maxValue, yTicks, tankLimits) {
   const ranges = gaugeBandRanges(tankLimits, tank.product);
   const trendLineColor = "rgba(74, 108, 140, 0.92)";
   const trendPointBorder = "rgba(74, 108, 140, 0.92)";
+  const chartMin = 0;
+  const chartMax = 100;
   return {
     animationDuration: 700,
     grid: { top: 22, right: 22, bottom: 42, left: 56 },
@@ -154,8 +199,8 @@ function buildTrendOption(tank, minValue, maxValue, yTicks, tankLimits) {
     },
     yAxis: {
       type: "value",
-      min: minValue,
-      max: maxValue,
+      min: chartMin,
+      max: chartMax,
       interval: yTicks.length > 1 ? yTicks[1] - yTicks[0] : 10,
       axisLabel: {
         color: "#59758a",
@@ -174,6 +219,7 @@ function buildTrendOption(tank, minValue, maxValue, yTicks, tankLimits) {
         symbol: "circle",
         symbolSize: 7,
         showSymbol: tank.points.length <= 20,
+        z: 3,
         lineStyle: { width: 4, color: trendLineColor },
         itemStyle: {
           color: "#ffffff",
@@ -195,7 +241,8 @@ function buildTrendOption(tank, minValue, maxValue, yTicks, tankLimits) {
         },
         markArea: {
           silent: true,
-          itemStyle: { opacity: 0.12 },
+          z: 1,
+          itemStyle: { opacity: 0.2 },
           data: ranges.map((range) => [{ yAxis: range.start, itemStyle: { color: range.color } }, { yAxis: range.end }])
         },
         data: tank.points.map((point) => ({
@@ -286,6 +333,7 @@ function TankChartDetail({ tank, tankLimits }) {
   const high = tank.points.reduce((current, point) => (point.fillPercent > current.fillPercent ? point : current), tank.points[0]);
   const gaugeOption = buildGaugeOption(latest.fillPercent, tankLimits, tank.product);
   const trendOption = buildTrendOption(tank, minValue, maxValue, yTicks, tankLimits);
+  const lowerYellowEstimate = buildLowerYellowEstimate(tank, tankLimits);
 
   return (
     <Card>
@@ -297,6 +345,20 @@ function TankChartDetail({ tank, tankLimits }) {
               Tank {tank.atgTankId} • {tank.product} • {formatVolume(tank.capacity)} capacity
             </Typography>
           </div>
+          <Card variant="outlined" sx={{ bgcolor: "rgba(11,95,255,0.03)" }}>
+            <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
+              <Typography variant="caption" color="text.secondary">Time To Lower Yellow</Typography>
+              <Typography variant="h5" fontWeight={800}>{lowerYellowEstimate.label}</Typography>
+              <Typography variant="body2" color="text.secondary">{lowerYellowEstimate.caption}</Typography>
+            </CardContent>
+          </Card>
+          <Card variant="outlined" sx={{ bgcolor: "rgba(11,95,255,0.03)" }}>
+            <CardContent sx={{ py: 1.25, "&:last-child": { pb: 1.25 } }}>
+              <Typography variant="caption" color="text.secondary">Time To Lower Yellow</Typography>
+              <Typography variant="h5" fontWeight={800}>{lowerYellowEstimate.label}</Typography>
+              <Typography variant="body2" color="text.secondary">{lowerYellowEstimate.caption}</Typography>
+            </CardContent>
+          </Card>
           <Grid container spacing={1.5}>
             <Grid size={4}>
               <Typography variant="caption" color="text.secondary">Latest</Typography>

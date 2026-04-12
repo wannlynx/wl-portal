@@ -1,0 +1,54 @@
+{
+  "seed": 424242,
+  "recordsPerSite": 100,
+  "dateWindowDays": 30,
+  "timezoneDefaults": {
+    "default": "America/New_York",
+    "CA": "America/Los_Angeles",
+    "WA": "America/Los_Angeles",
+    "OR": "America/Los_Angeles",
+    "NV": "America/Los_Angeles",
+    "AZ": "America/Phoenix",
+    "CO": "America/Denver",
+    "UT": "America/Denver",
+    "NM": "America/Denver",
+    "TX": "America/Chicago",
+    "TN": "America/Chicago",
+    "IL": "America/Chicago",
+    "MN": "America/Chicago",
+    "WI": "America/Chicago",
+    "LA": "America/Chicago",
+    "AL": "America/Chicago",
+    "GA": "America/New_York",
+    "FL": "America/New_York",
+    "NY": "America/New_York",
+    "NJ": "America/New_York",
+    "PA": "America/New_York",
+    "OH": "America/New_York"
+  },
+  "mix": {
+    "successfulEmv": 0.55,
+    "contactlessEmv": 0.15,
+    "customerAbort": 0.1,
+    "fallbackAnomaly": 0.05,
+    "presetCash": 0.1,
+    "edgeCase": 0.05
+  },
+  "productProfiles": {
+    "Regular Unleaded": {
+      "priceRange": [3.09, 3.89],
+      "weight": 0.52,
+      "gallonRange": [6, 18]
+    },
+    "Premium Unleaded": {
+      "priceRange": [3.69, 4.59],
+      "weight": 0.18,
+      "gallonRange": [5, 16]
+    },
+    "Diesel #2": {
+      "priceRange": [3.59, 4.69],
+      "weight": 0.3,
+      "gallonRange": [18, 90]
+    }
+  }
+}

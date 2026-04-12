@@ -28,14 +28,24 @@ export async function getPricingDashboardData(): Promise<PricingDashboardData> {
   let benchmarkSnapshots = fallbackBenchmarks;
   let inventorySeries = fallbackInventory;
   let lastUpdated = benchmarkPrices.lastUpdated;
+  const warnings: string[] = [];
 
   try {
     const liveSnapshot = await api.getPricingSnapshot();
     benchmarkSnapshots = liveSnapshot.benchmarkSnapshots;
     inventorySeries = liveSnapshot.inventorySeries;
     lastUpdated = liveSnapshot.lastUpdated;
-  } catch (_error) {
-    // TODO: When live EIA is required in all environments, surface this instead of silently falling back.
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || "");
+    if (message.includes("Secret encryption key is missing")) {
+      warnings.push("Live EIA data is unavailable because the server encryption key is missing. Restart the API with PETROLEUM_SECRET_KEY or APP_ENCRYPTION_KEY and re-save jobber credentials if needed.");
+    } else if (message.includes("Unsupported state or unable to authenticate data")) {
+      warnings.push("Live EIA data is unavailable because the saved jobber credentials could not be authenticated. Re-save the EIA key for the active jobber in Admin.");
+    } else if (message.includes("EIA_API_KEY is missing")) {
+      warnings.push("Live EIA data is unavailable because no EIA key is configured for the active jobber.");
+    } else {
+      warnings.push("Live EIA data is unavailable, so the dashboard is showing fallback market data.");
+    }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
@@ -54,7 +64,8 @@ export async function getPricingDashboardData(): Promise<PricingDashboardData> {
     inventorySeries,
     forwardCurves: curveSeries,
     insightSummary: buildInsightSummary(benchmarkCards, inventorySeries, curveSeries, drivers),
-    sourceCoverage: drivers.sourceCoverage
+    sourceCoverage: drivers.sourceCoverage,
+    warnings
   };
 }
 

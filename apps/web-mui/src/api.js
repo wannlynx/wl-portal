@@ -41,6 +41,18 @@ export function completeOAuthLogin(nextToken) {
   setToken(nextToken);
 }
 
+export function buildAuthenticatedApiUrl(path, params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== "" && value != null) {
+      query.set(key, String(value));
+    }
+  });
+  const url = buildApiUrl(path);
+  const queryText = query.toString();
+  return queryText ? `${url}?${queryText}` : url;
+}
+
 export async function loginWithPassword(email, password) {
   const res = await fetch(buildApiUrl("/auth/login"), {
     method: "POST",
@@ -193,7 +205,27 @@ export const api = {
       body: JSON.stringify({ vendorSets })
     }),
   getSites: () => request("/sites"),
+  createSite: (payload) =>
+    request("/sites", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  deleteSite: (siteId) =>
+    request(`/sites/${siteId}`, {
+      method: "DELETE"
+    }),
   getSite: (siteId) => request(`/sites/${siteId}`),
+  getPumps: (siteId) => request(`/sites/${siteId}/pumps`),
+  addTank: (siteId, payload) =>
+    request(`/sites/${siteId}/tanks`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  addPump: (siteId, payload) =>
+    request(`/sites/${siteId}/pumps`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   getTankHistory: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return request(`/history/tanks${query ? `?${query}` : ""}`);
@@ -218,6 +250,38 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return buildApiUrl(`/sites/${siteId}/allied-transactions/export${query ? `?${query}` : ""}`);
   },
+  getAlliedUpgradeCards: () => request("/allied-upgrades/cards"),
+  createAlliedUpgradeCard: (payload) =>
+    request("/allied-upgrades/cards", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateAlliedUpgradeCard: (cardId, payload) =>
+    request(`/allied-upgrades/cards/${cardId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  deleteAlliedUpgradeCard: (cardId) =>
+    request(`/allied-upgrades/cards/${cardId}`, {
+      method: "DELETE"
+    }),
+  getAlliedUpgradeBatches: () => request("/allied-upgrades/batches"),
+  createAlliedUpgradeBatch: (payload) =>
+    request("/allied-upgrades/batches", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateAlliedUpgradeBatch: (batchId, payload) =>
+    request(`/allied-upgrades/batches/${batchId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  getEbolOverview: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return request(`/ebols/overview${query ? `?${query}` : ""}`);
+  },
+  getEbolStatus: (bolNumber) => request(`/ebols/${encodeURIComponent(bolNumber)}/status`),
+  getEbolExportUrl: (format, params = {}) => buildAuthenticatedApiUrl(`/ebols/export.${format}`, params),
   getPricingSnapshot: () => request("/market/pricing"),
   getOpisSnapshot: (params = {}) => {
     const query = new URLSearchParams(params).toString();

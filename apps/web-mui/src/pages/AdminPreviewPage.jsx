@@ -22,6 +22,11 @@ import {
   TextField,
   Typography
 } from "@mui/material";
+import DomainIcon from "@mui/icons-material/Domain";
+import LocalGasStationIcon from "@mui/icons-material/LocalGasStation";
+import OpacityIcon from "@mui/icons-material/Opacity";
+import AddBusinessIcon from "@mui/icons-material/AddBusiness";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { api } from "../api";
 import packageMeta from "../../package.json";
 import { normalizeTankLimits, TANK_LIMIT_FAMILIES } from "../tankLimits";
@@ -29,6 +34,10 @@ import { normalizeTankLimits, TANK_LIMIT_FAMILIES } from "../tankLimits";
 const EMPTY_BRANDING = { name: "", logoUrl: "" };
 const EMPTY_OPIS = { username: "", password: "" };
 const EMPTY_EIA = { apiKey: "" };
+const EMPTY_SITE = { siteCode: "", name: "", address: "", postalCode: "", region: "" };
+const EMPTY_TANK = { atgTankId: "", label: "", product: "", capacityLiters: "" };
+const EMPTY_PUMP = { pumpNumber: "", label: "", sideAip: "", sideBip: "", port: "5201" };
+const NEW_SITE_OPTION = "__new__";
 const EMPTY_USER = { name: "", email: "", password: "", role: "manager", jobberId: "", siteIds: [] };
 const CUSTOMER_STATUS_OPTIONS = [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }];
 const PRICING_BRANCH_OPTIONS = [{ value: "unbranded", label: "Unbranded" }, { value: "branded", label: "Branded" }, { value: "spot", label: "Spot" }, { value: "rack", label: "Rack" }];
@@ -44,7 +53,8 @@ const EMPTY_CUSTOMER = { name: "", addressLine1: "", addressLine2: "", city: "",
 const EMPTY_PROFILE = { effectiveStart: "", effectiveEnd: "", freightMiles: "", freightCostGas: "", freightCostDiesel: "", rackMarginGas: "", rackMarginDiesel: "", discountRegular: "", discountMid: "", discountPremium: "", discountDiesel: "", branch: "unbranded", marketKey: "", terminalKey: "", distributionLabel: "", gasPrepay: "", dieselPrepay: "", storageFee: "", gasFedExcise: "", gasStateExcise: "", dieselFedExcise: "", dieselStateExcise: "", gasSalesTaxRate: "", dieselSalesTaxRate: "", gasRetailMargin: "", dieselRetailMargin: "", extraRulesJson: "{}" };
 const EMPTY_RULE = { name: "", productFamily: "regular", effectiveStart: "", effectiveEnd: "", status: "draft", versionLabel: "", notes: "" };
 const EMPTY_VENDOR_SET = { selectionMode: "lowest", productFamily: "regular", marketKey: "", basisMode: "match_rule_vendor", vendorsCsv: "" };
-const TABS = ["overview", "users", "branding", "credentials", "profiles", "rules", "tank-limits", "pricing", "version"];
+const TABS = ["overview", "users", "sites", "branding", "credentials", "profiles", "rules", "tank-limits", "pricing", "version"];
+const MAX_LOGO_FILE_BYTES = 1200000;
   const VENDOR_SET_HELP_LINES = [
     { label: "selectionMode", description: "lowest: use the lowest available rack vendor from the selected vendor list; highest: use the highest available vendor; first_available: use the first vendor row found; specific_vendor: effectively constrain to the listed vendor(s), usually one." },
     { label: "basisMode", description: "Use Selected Rack Value: the Rack Basis card shows the exact rack value the rule selected, so it matches Lowest Rack Input. Use Rack Comparison Average: the Rack Basis card shows the broader comparison rack value for the market instead, which may differ from Lowest Rack Input." },
@@ -174,6 +184,13 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
   const [brandingForm, setBrandingForm] = useState(EMPTY_BRANDING);
   const [opisForm, setOpisForm] = useState(EMPTY_OPIS);
   const [eiaForm, setEiaForm] = useState(EMPTY_EIA);
+  const [adminSites, setAdminSites] = useState([]);
+  const [selectedAdminSiteId, setSelectedAdminSiteId] = useState("");
+  const [selectedAdminSite, setSelectedAdminSite] = useState(null);
+  const [adminAssetTotals, setAdminAssetTotals] = useState({ sites: 0, tanks: 0, pumps: 0 });
+  const [siteForm, setSiteForm] = useState(EMPTY_SITE);
+  const [tankForm, setTankForm] = useState(EMPTY_TANK);
+  const [pumpForm, setPumpForm] = useState(EMPTY_PUMP);
   const [opisStatus, setOpisStatus] = useState(null);
   const [eiaStatus, setEiaStatus] = useState(null);
   const [pricingConfigs, setPricingConfigs] = useState([]);
@@ -194,6 +211,9 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
   const [savingBranding, setSavingBranding] = useState(false);
   const [savingOpis, setSavingOpis] = useState(false);
   const [savingEia, setSavingEia] = useState(false);
+  const [savingSite, setSavingSite] = useState(false);
+  const [savingTank, setSavingTank] = useState(false);
+  const [savingPump, setSavingPump] = useState(false);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
@@ -226,11 +246,12 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
     async function load() {
       setLoading(true);
       try {
-        const [opisResult, eiaResult, pricingResult, customersResult] = await Promise.allSettled([
+        const [opisResult, eiaResult, pricingResult, customersResult, sitesResult] = await Promise.allSettled([
           api.getJobberOpisCredentialsStatus(),
           api.getJobberEiaCredentialsStatus(),
           api.getJobberPricingConfigs(),
-          api.getCustomers()
+          api.getCustomers(),
+          api.getSites()
         ]);
         if (ignore) return;
 
@@ -273,6 +294,13 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
           setCustomers([]);
         }
 
+        if (sitesResult.status === "fulfilled") {
+          const nextSites = Array.isArray(sitesResult.value) ? sitesResult.value : [];
+          setAdminSites(nextSites);
+        } else {
+          setAdminSites([]);
+        }
+
         try {
           const nextManagementOverview = await api.getManagementOverview();
           if (!ignore) setManagementOverview(nextManagementOverview);
@@ -290,6 +318,7 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
         if (eiaResult.status === "rejected") loadIssues.push("EIA status");
         if (pricingResult.status === "rejected") loadIssues.push("pricing configs");
         if (customersResult.status === "rejected") loadIssues.push("terminal profiles");
+        if (sitesResult.status === "rejected") loadIssues.push("sites");
         setError(loadIssues.length ? `Some admin data did not load: ${loadIssues.join(", ")}.` : "");
       } catch (nextError) {
         if (!ignore) {
@@ -304,6 +333,31 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
       ignore = true;
     };
   }, [jobber?.id]);
+
+  useEffect(() => {
+    if (selectedAdminSiteId && selectedAdminSiteId !== NEW_SITE_OPTION && !adminSites.some((site) => site.id === selectedAdminSiteId)) {
+      setSelectedAdminSiteId("");
+      setSelectedAdminSite(null);
+    }
+  }, [adminSites, selectedAdminSiteId]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!selectedAdminSiteId || selectedAdminSiteId === NEW_SITE_OPTION) {
+      setSelectedAdminSite(null);
+      return () => {
+        ignore = true;
+      };
+    }
+    api.getSite(selectedAdminSiteId).then((site) => {
+      if (!ignore) setSelectedAdminSite(site);
+    }).catch((nextError) => {
+      if (!ignore) setError(nextError instanceof Error ? nextError.message : String(nextError || "Unable to load site detail"));
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [selectedAdminSiteId]);
 
   useEffect(() => {
     if (!selectedCustomerId) {
@@ -386,6 +440,8 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
     return filteredSites.filter((row) => !targetJobberId || row.jobberId === targetJobberId);
   }, [activeJobberId, filteredSites, userForm.jobberId]);
   const selectedCustomer = useMemo(() => customers.find((row) => row.id === selectedCustomerId) || null, [customers, selectedCustomerId]);
+  const selectedAdminSiteSummary = useMemo(() => adminSites.find((site) => site.id === selectedAdminSiteId) || null, [adminSites, selectedAdminSiteId]);
+  const isCreatingAdminSite = selectedAdminSiteId === NEW_SITE_OPTION;
 
   useEffect(() => {
     if (!selectedUser) return;
@@ -417,6 +473,124 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
         ? current.siteIds.filter((id) => id !== siteId)
         : [...current.siteIds, siteId]
     }));
+  }
+
+  async function reloadAdminSites(preferredSiteId = "") {
+    const nextSites = await api.getSites();
+    const normalizedSites = Array.isArray(nextSites) ? nextSites : [];
+    setAdminSites(normalizedSites);
+    const siteDetails = await Promise.all(normalizedSites.map((site) => api.getSite(site.id).catch(() => null)));
+    const totals = siteDetails.reduce((acc, site) => {
+      if (!site) return acc;
+      acc.tanks += Array.isArray(site.tanks) ? site.tanks.length : 0;
+      acc.pumps += Array.isArray(site.pumps) ? site.pumps.length : 0;
+      return acc;
+    }, { sites: normalizedSites.length, tanks: 0, pumps: 0 });
+    setAdminAssetTotals(totals);
+    if (preferredSiteId) setSelectedAdminSiteId(preferredSiteId);
+    return normalizedSites;
+  }
+
+  async function createAdminSite(event) {
+    event.preventDefault();
+    setSavingSite(true);
+    setError("");
+    setMessage("");
+    try {
+      const created = await api.createSite({
+        siteCode: siteForm.siteCode.trim(),
+        name: siteForm.name.trim(),
+        address: siteForm.address.trim(),
+        postalCode: siteForm.postalCode.trim(),
+        region: siteForm.region.trim()
+      });
+      await reloadAdminSites(created?.id || "");
+      await reloadManagementOverview();
+      setSiteForm(EMPTY_SITE);
+      setMessage(`Created site ${created?.siteCode || created?.name || ""}.`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError || "Unable to create site"));
+    } finally {
+      setSavingSite(false);
+    }
+  }
+
+  async function createAdminTank(event) {
+    event.preventDefault();
+    if (!selectedAdminSiteId) {
+      setError("Select a site before adding a tank.");
+      return;
+    }
+    setSavingTank(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.addTank(selectedAdminSiteId, {
+        atgTankId: tankForm.atgTankId.trim(),
+        label: tankForm.label.trim(),
+        product: tankForm.product.trim(),
+        capacityLiters: Number(tankForm.capacityLiters || 0)
+      });
+      const refreshed = await api.getSite(selectedAdminSiteId);
+      setSelectedAdminSite(refreshed);
+      await reloadAdminSites(selectedAdminSiteId);
+      setTankForm(EMPTY_TANK);
+      setMessage("Tank added.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError || "Unable to add tank"));
+    } finally {
+      setSavingTank(false);
+    }
+  }
+
+  async function createAdminPump(event) {
+    event.preventDefault();
+    if (!selectedAdminSiteId) {
+      setError("Select a site before adding a pump.");
+      return;
+    }
+    setSavingPump(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.addPump(selectedAdminSiteId, {
+        pumpNumber: Number(pumpForm.pumpNumber || 0),
+        label: pumpForm.label.trim(),
+        sides: {
+          A: { ip: pumpForm.sideAip.trim(), port: Number(pumpForm.port || 5201) },
+          B: { ip: pumpForm.sideBip.trim(), port: Number(pumpForm.port || 5201) }
+        }
+      });
+      const refreshed = await api.getSite(selectedAdminSiteId);
+      setSelectedAdminSite(refreshed);
+      await reloadAdminSites(selectedAdminSiteId);
+      setPumpForm(EMPTY_PUMP);
+      setMessage("Pump added.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError || "Unable to add pump"));
+    } finally {
+      setSavingPump(false);
+    }
+  }
+
+  async function deleteAdminSite() {
+    if (!selectedAdminSiteId || selectedAdminSiteId === NEW_SITE_OPTION || !selectedAdminSiteSummary) return;
+    if (!window.confirm(`Delete site ${selectedAdminSiteSummary.siteCode || selectedAdminSiteSummary.name}? This removes the site and its assets.`)) return;
+    setSavingSite(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.deleteSite(selectedAdminSiteId);
+      await reloadAdminSites("");
+      await reloadManagementOverview();
+      setSelectedAdminSiteId("");
+      setSelectedAdminSite(null);
+      setMessage("Site deleted.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError || "Unable to delete site"));
+    } finally {
+      setSavingSite(false);
+    }
   }
 
   async function reloadManagementOverview() {
@@ -513,10 +687,16 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
 
   function onLogoFileSelected(file) {
     if (!file) return;
+    if (file.size > MAX_LOGO_FILE_BYTES) {
+      setError("Logo file is too large. Use an image under 1.2 MB.");
+      setMessage("");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") {
         setBrandingForm((current) => ({ ...current, logoUrl: reader.result }));
+        setError("");
       }
     };
     reader.readAsDataURL(file);
@@ -1341,6 +1521,12 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
                   <Typography fontWeight={700}>{pricingSummary.total.toLocaleString()}</Typography>
                 </Paper>
               </Grid>
+              <Grid size={{ xs: 6, md: 3 }}>
+                <Paper variant="outlined" sx={{ p: 1.5 }}>
+                  <Typography variant="caption" color="text.secondary">Sites</Typography>
+                  <Typography fontWeight={700}>{adminSites.length.toLocaleString()}</Typography>
+                </Paper>
+              </Grid>
             </Grid>
           </Section>
 
@@ -1382,8 +1568,235 @@ export function AdminPreviewPage({ user, jobber, onJobberUpdated }) {
                   color={statusTone(pricingRules.length > 0)}
                   label={pricingRules.length ? "Pricing rules" : "Load pricing rules"}
                 />
+                <Chip
+                  clickable
+                  onClick={() => openAdminTask("sites")}
+                  color={statusTone(adminSites.length > 0)}
+                  label={adminSites.length ? "Manage sites" : "Add first site"}
+                />
               </Stack>
             </Section>
+        </Stack>
+      ) : null}
+
+      {!showFocusedMobileTask && tab === "sites" ? (
+        <Stack spacing={2.5}>
+          <Section title="Sites And Assets" subtitle="Manage site setup, then add tanks and pumps to the active site.">
+            <Grid container spacing={1.5}>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Paper variant="outlined" sx={{ p: 1.75, background: "linear-gradient(135deg, rgba(11,95,255,0.08), rgba(11,95,255,0.02))" }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Total Sites</Typography>
+                      <Typography variant="h5" fontWeight={700}>{adminAssetTotals.sites.toLocaleString()}</Typography>
+                    </Box>
+                    <DomainIcon color="primary" />
+                  </Stack>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Paper variant="outlined" sx={{ p: 1.75, background: "linear-gradient(135deg, rgba(46,125,50,0.10), rgba(46,125,50,0.03))" }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Total Tanks</Typography>
+                      <Typography variant="h5" fontWeight={700}>{adminAssetTotals.tanks.toLocaleString()}</Typography>
+                    </Box>
+                    <OpacityIcon sx={{ color: "#2e7d32" }} />
+                  </Stack>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Paper variant="outlined" sx={{ p: 1.75, background: "linear-gradient(135deg, rgba(199,119,0,0.10), rgba(199,119,0,0.03))" }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Total Pumps</Typography>
+                      <Typography variant="h5" fontWeight={700}>{adminAssetTotals.pumps.toLocaleString()}</Typography>
+                    </Box>
+                    <LocalGasStationIcon sx={{ color: "#c77700" }} />
+                  </Stack>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Section>
+
+          <Grid container spacing={2.5}>
+            <Grid size={{ xs: 12 }}>
+              <Section title="Site Filter" subtitle="Pick an existing site or choose ADD NEW SITE at the top of the list.">
+                <Stack spacing={2}>
+                  <TextField
+                    select
+                    label="Site"
+                    value={selectedAdminSiteId}
+                    onChange={(event) => setSelectedAdminSiteId(event.target.value)}
+                    fullWidth
+                  >
+                    <MenuItem value={NEW_SITE_OPTION}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <AddBusinessIcon fontSize="small" />
+                        <span>ADD NEW SITE</span>
+                      </Stack>
+                    </MenuItem>
+                    <MenuItem value="">Select site</MenuItem>
+                    {adminSites.map((site) => (
+                      <MenuItem key={site.id} value={site.id}>{site.siteCode} - {site.name}</MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+              </Section>
+            </Grid>
+          </Grid>
+
+          {isCreatingAdminSite ? (
+            <Section title="Add New Site" subtitle="Only shown when ADD NEW SITE is selected in the filter above.">
+              <Box component="form" onSubmit={createAdminSite}>
+                <Stack spacing={2}>
+                  <Grid container spacing={1.5}>
+                    <Grid size={{ xs: 12, md: 4 }}>
+                      <TextField label="Site Code" value={siteForm.siteCode} onChange={(event) => setSiteForm((current) => ({ ...current, siteCode: event.target.value }))} fullWidth disabled={!canManage || savingSite} />
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 8 }}>
+                      <TextField label="Site Name" value={siteForm.name} onChange={(event) => setSiteForm((current) => ({ ...current, name: event.target.value }))} fullWidth disabled={!canManage || savingSite} />
+                    </Grid>
+                  </Grid>
+                  <TextField label="Address" value={siteForm.address} onChange={(event) => setSiteForm((current) => ({ ...current, address: event.target.value }))} fullWidth disabled={!canManage || savingSite} />
+                  <Grid container spacing={1.5}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <TextField label="Postal Code" value={siteForm.postalCode} onChange={(event) => setSiteForm((current) => ({ ...current, postalCode: event.target.value }))} fullWidth disabled={!canManage || savingSite} />
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <TextField label="Region" value={siteForm.region} onChange={(event) => setSiteForm((current) => ({ ...current, region: event.target.value }))} fullWidth disabled={!canManage || savingSite} />
+                    </Grid>
+                  </Grid>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1.25}>
+                    <Button type="submit" variant="contained" disabled={!canManage || savingSite}>
+                      Add Site
+                    </Button>
+                  </Stack>
+                </Stack>
+              </Box>
+            </Section>
+          ) : selectedAdminSite ? (
+            <Grid container spacing={2.5}>
+              <Grid size={{ xs: 12 }}>
+                <Section
+                  title={selectedAdminSite.name}
+                  subtitle={[selectedAdminSite.siteCode, selectedAdminSite.region, selectedAdminSite.postalCode].filter(Boolean).join(" | ") || "Selected site"}
+                  action={
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteOutlineIcon />}
+                      onClick={deleteAdminSite}
+                      disabled={!canManage || savingSite}
+                    >
+                      Delete Site
+                    </Button>
+                  }
+                >
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Paper variant="outlined" sx={{ p: 1.5, minHeight: "100%" }}>
+                        <Stack spacing={1}>
+                          <Typography variant="subtitle2">Site Detail</Typography>
+                          <Typography fontWeight={700}>{selectedAdminSite.name}</Typography>
+                          <Typography variant="body2" color="text.secondary">{selectedAdminSite.address || "No address"}</Typography>
+                          <Typography variant="caption" color="text.secondary">Assets: {(selectedAdminSite.tanks || []).length} tanks | {(selectedAdminSite.pumps || []).length} pumps</Typography>
+                        </Stack>
+                      </Paper>
+                    </Grid>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Paper variant="outlined" sx={{ p: 1.5, minHeight: "100%" }}>
+                        <Stack spacing={1}>
+                          <Typography variant="subtitle2">Quick Actions</Typography>
+                          <Typography variant="body2" color="text.secondary">Add tanks and pumps for this site below. Deleting a site requires confirmation first.</Typography>
+                        </Stack>
+                      </Paper>
+                    </Grid>
+                  </Grid>
+                </Section>
+              </Grid>
+
+              <Grid size={{ xs: 12, xl: 6 }}>
+                <Section title="Add Tank" subtitle="Create a tank on the selected site.">
+                  <Box component="form" onSubmit={createAdminTank}>
+                    <Stack spacing={2}>
+                      <Grid container spacing={1.5}>
+                        <Grid size={{ xs: 12, md: 6 }}>
+                          <TextField label="ATG Tank ID" value={tankForm.atgTankId} onChange={(event) => setTankForm((current) => ({ ...current, atgTankId: event.target.value }))} fullWidth disabled={!canManage || savingTank} />
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 6 }}>
+                          <TextField label="Capacity Liters" value={tankForm.capacityLiters} onChange={(event) => setTankForm((current) => ({ ...current, capacityLiters: event.target.value }))} fullWidth disabled={!canManage || savingTank} />
+                        </Grid>
+                      </Grid>
+                      <TextField label="Label" value={tankForm.label} onChange={(event) => setTankForm((current) => ({ ...current, label: event.target.value }))} fullWidth disabled={!canManage || savingTank} />
+                      <TextField label="Product" value={tankForm.product} onChange={(event) => setTankForm((current) => ({ ...current, product: event.target.value }))} fullWidth disabled={!canManage || savingTank} />
+                      <Button type="submit" variant="contained" disabled={!canManage || savingTank}>
+                        Add Tank
+                      </Button>
+                    </Stack>
+                  </Box>
+                </Section>
+              </Grid>
+
+              <Grid size={{ xs: 12, xl: 6 }}>
+                <Section title="Add Pump" subtitle="Create a pump with side A and side B IP settings.">
+                  <Box component="form" onSubmit={createAdminPump}>
+                    <Stack spacing={2}>
+                      <Grid container spacing={1.5}>
+                        <Grid size={{ xs: 12, md: 6 }}>
+                          <TextField label="Pump Number" value={pumpForm.pumpNumber} onChange={(event) => setPumpForm((current) => ({ ...current, pumpNumber: event.target.value }))} fullWidth disabled={!canManage || savingPump} />
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 6 }}>
+                          <TextField label="Label" value={pumpForm.label} onChange={(event) => setPumpForm((current) => ({ ...current, label: event.target.value }))} fullWidth disabled={!canManage || savingPump} />
+                        </Grid>
+                      </Grid>
+                      <Grid container spacing={1.5}>
+                        <Grid size={{ xs: 12, md: 6 }}>
+                          <TextField label="Side A IP" value={pumpForm.sideAip} onChange={(event) => setPumpForm((current) => ({ ...current, sideAip: event.target.value }))} fullWidth disabled={!canManage || savingPump} />
+                        </Grid>
+                        <Grid size={{ xs: 12, md: 6 }}>
+                          <TextField label="Side B IP" value={pumpForm.sideBip} onChange={(event) => setPumpForm((current) => ({ ...current, sideBip: event.target.value }))} fullWidth disabled={!canManage || savingPump} />
+                        </Grid>
+                      </Grid>
+                      <TextField label="Port" value={pumpForm.port} onChange={(event) => setPumpForm((current) => ({ ...current, port: event.target.value }))} fullWidth disabled={!canManage || savingPump} />
+                      <Button type="submit" variant="contained" disabled={!canManage || savingPump}>
+                        Add Pump
+                      </Button>
+                    </Stack>
+                  </Box>
+                </Section>
+              </Grid>
+
+              <Grid size={{ xs: 12, xl: 6 }}>
+                <Section title="Existing Tanks" subtitle="Current tanks on the selected site.">
+                  <Stack spacing={1.25}>
+                    {(selectedAdminSite.tanks || []).length ? selectedAdminSite.tanks.map((tank) => (
+                      <Paper key={tank.id} variant="outlined" sx={{ p: 1.5 }}>
+                        <Typography fontWeight={700}>{tank.label}</Typography>
+                        <Typography variant="body2" color="text.secondary">{`Tank ${tank.atgTankId} | ${tank.product || "Unknown"} | ${tank.capacityLiters || 0} L`}</Typography>
+                      </Paper>
+                    )) : <Typography color="text.secondary">No tanks on this site yet.</Typography>}
+                  </Stack>
+                </Section>
+              </Grid>
+              <Grid size={{ xs: 12, xl: 6 }}>
+                <Section title="Existing Pumps" subtitle="Current pumps on the selected site.">
+                  <Stack spacing={1.25}>
+                    {(selectedAdminSite.pumps || []).length ? selectedAdminSite.pumps.map((pump) => (
+                      <Paper key={pump.id} variant="outlined" sx={{ p: 1.5 }}>
+                        <Typography fontWeight={700}>{pump.label}</Typography>
+                        <Typography variant="body2" color="text.secondary">{`Pump ${pump.pumpNumber}`}</Typography>
+                      </Paper>
+                    )) : <Typography color="text.secondary">No pumps on this site yet.</Typography>}
+                  </Stack>
+                </Section>
+              </Grid>
+            </Grid>
+          ) : (
+            <Section title="Sites" subtitle="Choose a site from the filter above or select ADD NEW SITE.">
+              <Typography color="text.secondary">No site selected yet.</Typography>
+            </Section>
+          )}
         </Stack>
       ) : null}
 

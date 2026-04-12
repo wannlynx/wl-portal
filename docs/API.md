@@ -112,3 +112,11 @@ This file is a current high-level route map for the local API in `apps/api/src/s
 - `GET /market/pricing` requires a valid EIA key from `EIA_API_KEY` or encrypted jobber storage.
 - `GET /market/opis` and `GET /market/opis/raw` require valid OPIS credentials from `OPIS_USERNAME` / `OPIS_PASSWORD` or encrypted jobber storage.
 - Encrypted jobber secrets depend on a stable `PETROLEUM_SECRET_KEY` or `APP_ENCRYPTION_KEY`. If that key changes, previously saved OPIS and EIA values must be re-saved.
+- `POST /pricing/runs/preview` and `POST /pricing/runs` now refresh live OPIS basis inputs before pricing runs.
+- Live spot basis uses the OPIS Spot API endpoint `GET https://spotapi.opisnet.com/v1/api/SpotValues` with `retrieveLatestData=true`.
+- Live rack basis uses the OPIS Rack API endpoint `GET /SupplierPrices` and keeps the first available snapshot after `6:00 AM ET`.
+- `Price Run` does not fall back to workbook/demo spot or rack basis values. Missing live inputs return incomplete pricing rather than a fake basis.
+- Current live spot product codes are:
+  - `REG 87`: `O1007NR`
+  - `PRE 91`: `O1007NW`
+  - `Diesel`: `O1007G4`

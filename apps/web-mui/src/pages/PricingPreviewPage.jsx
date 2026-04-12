@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Card,
@@ -479,45 +480,36 @@ export function PricingPreviewPage() {
             }
           >
             <Stack spacing={1.5}>
-              <TextField
-                select
+              <Autocomplete
                 size="small"
-                label="Timing"
-                value={opisFilters.timing}
-                onChange={(event) => updateOpisFilter("timing", event.target.value)}
-              >
-                {(opisSnapshot?.filterOptions?.timing || []).map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
+                options={opisSnapshot?.filterOptions?.timing || []}
+                value={(opisSnapshot?.filterOptions?.timing || []).find((option) => option.value === opisFilters.timing) || null}
+                onChange={(_event, nextOption) => updateOpisFilter("timing", nextOption?.value || "")}
+                getOptionLabel={(option) => option.label}
+                isOptionEqualToValue={(option, value) => option.value === value.value}
+                renderInput={(params) => <TextField {...params} label="Timing" placeholder="Type timing" />}
+                clearOnEscape
+              />
+              <Autocomplete
                 size="small"
-                label="State"
-                value={opisFilters.state}
-                onChange={(event) => updateOpisFilter("state", event.target.value)}
-              >
-                {(opisSnapshot?.filterOptions?.states || []).map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
+                options={opisSnapshot?.filterOptions?.states || []}
+                value={(opisSnapshot?.filterOptions?.states || []).find((option) => option.value === opisFilters.state) || null}
+                onChange={(_event, nextOption) => updateOpisFilter("state", nextOption?.value || "")}
+                getOptionLabel={(option) => option.label}
+                isOptionEqualToValue={(option, value) => option.value === value.value}
+                renderInput={(params) => <TextField {...params} label="State" placeholder="Type state" />}
+                clearOnEscape
+              />
+              <Autocomplete
                 size="small"
-                label="Fuel"
-                value={opisFilters.fuelType}
-                onChange={(event) => updateOpisFilter("fuelType", event.target.value)}
-              >
-                {(opisSnapshot?.filterOptions?.fuelTypes || []).map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </TextField>
+                options={opisSnapshot?.filterOptions?.fuelTypes || []}
+                value={(opisSnapshot?.filterOptions?.fuelTypes || []).find((option) => option.value === opisFilters.fuelType) || null}
+                onChange={(_event, nextOption) => updateOpisFilter("fuelType", nextOption?.value || "")}
+                getOptionLabel={(option) => option.label}
+                isOptionEqualToValue={(option, value) => option.value === value.value}
+                renderInput={(params) => <TextField {...params} label="Fuel" placeholder="Type fuel" />}
+                clearOnEscape
+              />
               {opisLoading ? <LinearProgress /> : null}
               {opisError ? <Alert severity="warning">{opisError}</Alert> : null}
               <Grid container spacing={1.25}>

@@ -1,7 +1,7 @@
 {
   "name": "petroleum-dashboard",
   "private": true,
-  "version": "0.2.0",
+  "version": "3.0.0",
   "workspaces": [
     "apps/api",
     "apps/web",

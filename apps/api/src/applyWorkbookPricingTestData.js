@@ -1,3 +1,4 @@
+require("./loadEnv");
 const crypto = require("crypto");
 const fs = require("fs");
 const { query, tx, initDb } = require("./db");
@@ -13,38 +14,31 @@ function centsToDollars(value) {
   return Number((value / 100).toFixed(4));
 }
 
+function localCalendarDate(date = new Date(), timeZone = process.env.APP_TIME_ZONE || Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York") {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  return `${year}-${month}-${day}`;
+}
+
 // Values below are derived from the workbook sections in Updated CostCalculator_.xlsx.
 // The script uses hard-coded extracted values, so the workbook file itself is not required at runtime.
 // PRICING_WORKBOOK_PATH is only used for operator visibility in logs and notes.
 //
-// - SF spot quote ids: SFRCRR / SFRCRP / SFRCN2
 // - RIN / Ethanol quote ids: USARNC / SFR799
 // - Market adders row 33
 // - Contract-minus table rows 51-54
 const MARKET_CONFIGS = [
-  { marketKey: "benicia", terminalKey: "benicia_terminal", label: "Benicia", adder: 0.005, dieselAdder: 0.012, contractMinus: { regular: -4, mid: -4, premium: -4, diesel: -2 } },
-  { marketKey: "stockton", terminalKey: "stockton_terminal", label: "Stockton", adder: 0.011, dieselAdder: -0.01, contractMinus: { regular: -3, mid: -3, premium: -3, diesel: -1 } },
-  { marketKey: "sacramento", terminalKey: "sacramento_terminal", label: "Sacramento", adder: 0.02, dieselAdder: 0, contractMinus: { regular: -3, mid: -3, premium: -3, diesel: 0 } },
-  { marketKey: "san_jose", terminalKey: "san_jose_terminal", label: "San Jose", adder: 0.02, dieselAdder: 0, contractMinus: { regular: -2.5, mid: -2.75, premium: -3, diesel: 0 } }
-];
-
-const VENDOR_POSTINGS = [
-  { marketKey: "benicia", productKey: "reg_87_carb", values: { valero: 2.34, chevron: 2.37, shell: 2.36 } },
-  { marketKey: "stockton", productKey: "reg_87_carb", values: { valero: 2.33, chevron: 2.35, shell: 2.34 } },
-  { marketKey: "sacramento", productKey: "reg_87_carb", values: { valero: 2.32, chevron: 2.34, shell: 2.33 } },
-  { marketKey: "san_jose", productKey: "reg_87_carb", values: { valero: 2.36, chevron: 2.38, shell: 2.37 } },
-  { marketKey: "benicia", productKey: "mid_89_carb", values: { valero: 2.49, chevron: 2.52, shell: 2.51 } },
-  { marketKey: "stockton", productKey: "mid_89_carb", values: { valero: 2.48, chevron: 2.5, shell: 2.49 } },
-  { marketKey: "sacramento", productKey: "mid_89_carb", values: { valero: 2.47, chevron: 2.49, shell: 2.48 } },
-  { marketKey: "san_jose", productKey: "mid_89_carb", values: { valero: 2.51, chevron: 2.54, shell: 2.53 } },
-  { marketKey: "benicia", productKey: "premium_91_carb", values: { valero: 2.66, chevron: 2.7, shell: 2.69 } },
-  { marketKey: "stockton", productKey: "premium_91_carb", values: { valero: 2.65, chevron: 2.68, shell: 2.67 } },
-  { marketKey: "sacramento", productKey: "premium_91_carb", values: { valero: 2.64, chevron: 2.67, shell: 2.66 } },
-  { marketKey: "san_jose", productKey: "premium_91_carb", values: { valero: 2.69, chevron: 2.72, shell: 2.71 } },
-  { marketKey: "benicia", productKey: "diesel_carb_ulsd", values: { valero: 2.79, chevron: 2.82, shell: 2.81 } },
-  { marketKey: "stockton", productKey: "diesel_carb_ulsd", values: { valero: 2.77, chevron: 2.8, shell: 2.79 } },
-  { marketKey: "sacramento", productKey: "diesel_carb_ulsd", values: { valero: 2.76, chevron: 2.79, shell: 2.78 } },
-  { marketKey: "san_jose", productKey: "diesel_carb_ulsd", values: { valero: 2.81, chevron: 2.84, shell: 2.83 } }
+  { marketKey: "benicia", terminalKey: "benicia_terminal", label: "Benicia", distributionLabel: "Fairfield UNB", gasFreight: 0.05, dieselFreight: 0.1, gasSalesTaxRate: 0.08375, dieselSalesTaxRate: 0.13, adder: 0.005, dieselAdder: 0.012, contractMinus: { regular: -4, mid: -4, premium: -4, diesel: -2 } },
+  { marketKey: "stockton", terminalKey: "stockton_terminal", label: "Stockton", distributionLabel: "Stockton", gasFreight: 0.07, dieselFreight: 0.1, gasSalesTaxRate: 0.08875, dieselSalesTaxRate: 0.13, adder: 0.011, dieselAdder: -0.01, contractMinus: { regular: -3, mid: -3, premium: -3, diesel: -1 } },
+  { marketKey: "sacramento", terminalKey: "sacramento_terminal", label: "Sacramento", distributionLabel: "Sacramento UNB", gasFreight: 0.05, dieselFreight: 0.1, gasSalesTaxRate: 0.08375, dieselSalesTaxRate: 0.13, adder: 0.02, dieselAdder: 0, contractMinus: { regular: -3, mid: -3, premium: -3, diesel: 0 } },
+  { marketKey: "san_jose", terminalKey: "san_jose_terminal", label: "San Jose", distributionLabel: "San Jose UNB", gasFreight: 0.07, dieselFreight: 0.1, gasSalesTaxRate: 0.08875, dieselSalesTaxRate: 0.13, adder: 0.02, dieselAdder: 0, contractMinus: { regular: -2.5, mid: -2.75, premium: -3, diesel: 0 } }
 ];
 
 async function ensureWorkbookCustomer(client, jobberId, pricingDate, market) {
@@ -74,7 +68,19 @@ async function ensureWorkbookCustomer(client, jobberId, pricingDate, market) {
   const profileRules = {
     branch: "unbranded",
     marketKey: market.marketKey,
-    terminalKey: market.terminalKey
+    terminalKey: market.terminalKey,
+    distributionLabel: market.distributionLabel,
+    gasPrepay: 0.075,
+    dieselPrepay: 0.385,
+    gasFedExcise: 0.184,
+    gasStateExcise: 0.612,
+    dieselFedExcise: 0.244,
+    dieselStateExcise: 0.466,
+    gasSalesTaxRate: market.gasSalesTaxRate,
+    dieselSalesTaxRate: market.dieselSalesTaxRate,
+    storageFee: 0.02,
+    gasRetailMargin: 0.15,
+    dieselRetailMargin: 0.15
   };
   if (profileCheck.rowCount) {
     await client.query(
@@ -83,7 +89,7 @@ async function ensureWorkbookCustomer(client, jobberId, pricingDate, market) {
            discount_regular=$5, discount_mid=$6, discount_premium=$7, discount_diesel=$8,
            rules_json=$9::jsonb, updated_at=$10
        WHERE id=$11`,
-      [0.12, 0.18, 0.22, 0.28, 0.03, 0.04, 0.05, 0.02, JSON.stringify(profileRules), now, profileId]
+      [market.gasFreight, market.dieselFreight, 0.15, 0.15, 0, 0, 0, 0, JSON.stringify(profileRules), now, profileId]
     );
   } else {
     await client.query(
@@ -92,7 +98,7 @@ async function ensureWorkbookCustomer(client, jobberId, pricingDate, market) {
         rack_margin_gas, rack_margin_diesel, discount_regular, discount_mid, discount_premium, discount_diesel,
         output_template_id, rules_json, created_at, updated_at
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17)`,
-      [profileId, customerId, pricingDate, null, 42, 0.12, 0.18, 0.22, 0.28, 0.03, 0.04, 0.05, 0.02, null, JSON.stringify(profileRules), now, now]
+      [profileId, customerId, pricingDate, null, 42, market.gasFreight, market.dieselFreight, 0.15, 0.15, 0, 0, 0, 0, null, JSON.stringify(profileRules), now, now]
     );
   }
 }
@@ -115,9 +121,6 @@ async function ensureWorkbookSnapshot(client, jobberId, pricingDate, userId) {
   await client.query(`DELETE FROM pricing_source_values WHERE snapshot_id=$1`, [snapshotId]);
 
   const sharedValues = [
-    { marketKey: "san_francisco", terminalKey: "san_francisco_terminal", productKey: "reg_87_carb", vendorKey: "", quoteCode: "SFRCRR", value: 2.31 },
-    { marketKey: "san_francisco", terminalKey: "san_francisco_terminal", productKey: "premium_91_carb", vendorKey: "", quoteCode: "SFRCRP", value: 2.58 },
-    { marketKey: "san_francisco", terminalKey: "san_francisco_terminal", productKey: "diesel_carb_ulsd", vendorKey: "", quoteCode: "SFRCN2", value: 2.74 },
     { marketKey: "san_francisco", terminalKey: "san_francisco_terminal", productKey: "rin", vendorKey: "", quoteCode: "USARNC", value: 0.92 },
     { marketKey: "san_francisco", terminalKey: "san_francisco_terminal", productKey: "ethanol", vendorKey: "", quoteCode: "SFR799", value: 2.12 }
   ];
@@ -134,20 +137,6 @@ async function ensureWorkbookSnapshot(client, jobberId, pricingDate, userId) {
       { marketKey: market.marketKey, terminalKey: market.terminalKey, productKey: "diesel_carb_ulsd", vendorKey: "", quoteCode: "CONTRACT_MINUS", value: centsToDollars(market.contractMinus.diesel) }
     );
   }
-  for (const posting of VENDOR_POSTINGS) {
-    const terminalKey = MARKET_CONFIGS.find((item) => item.marketKey === posting.marketKey)?.terminalKey || "";
-    for (const [vendorKey, value] of Object.entries(posting.values)) {
-      allValues.push({
-        marketKey: posting.marketKey,
-        terminalKey,
-        productKey: posting.productKey,
-        vendorKey,
-        quoteCode: "UNBRANDED_LOW_RACK",
-        value
-      });
-    }
-  }
-
   for (const entry of allValues) {
     await client.query(
       `INSERT INTO pricing_source_values(
@@ -187,15 +176,20 @@ async function ensureTaxes(client, jobberId, pricingDate, userId) {
 async function ensureRules(client, jobberId, pricingDate) {
   const now = new Date().toISOString();
   const definitions = [
-    ["regular", "reg_87_carb", "discountRegular", "freightCostGas", "rackMarginGas", "gas_tax"],
+    ["regular", "reg_87_carb", "discountRegular", "freightCostGas", "rackMarginGas", "gas_tax", "marketKey=$profile.marketKey|terminalKey=$profile.terminalKey|productKey=reg_87_carb|quoteCode=OPIS_SPOT_API"],
     ["mid", "mid_89_carb", "discountMid", "freightCostGas", "rackMarginGas", "gas_tax"],
-    ["premium", "premium_91_carb", "discountPremium", "freightCostGas", "rackMarginGas", "gas_tax"],
-    ["diesel", "diesel_carb_ulsd", "discountDiesel", "freightCostDiesel", "rackMarginDiesel", "diesel_tax"]
+    ["premium", "premium_91_carb", "discountPremium", "freightCostGas", "rackMarginGas", "gas_tax", "marketKey=$profile.marketKey|terminalKey=$profile.terminalKey|productKey=premium_91_carb|quoteCode=OPIS_SPOT_API"],
+    ["diesel", "diesel_carb_ulsd", "discountDiesel", "freightCostDiesel", "rackMarginDiesel", "diesel_tax", "marketKey=$profile.marketKey|terminalKey=$profile.terminalKey|productKey=diesel_carb_ulsd|quoteCode=OPIS_SPOT_API"]
   ];
-  for (const [family, productKey, discountField, freightField, marginField, taxName] of definitions) {
+  for (const [family, productKey, discountField, freightField, marginField, taxName, spotSourceRef = ""] of definitions) {
     const existing = await client.query(
-      `SELECT id FROM pricing_rule_sets WHERE jobber_id=$1 AND name=$2 LIMIT 1`,
-      [jobberId, `Workbook ${family} rule`]
+      `SELECT id
+       FROM pricing_rule_sets
+       WHERE jobber_id=$1
+         AND name=$2
+         AND effective_start=$3
+       LIMIT 1`,
+      [jobberId, `Workbook ${family} rule`, pricingDate]
     );
     const ruleSetId = existing.rowCount ? existing.rows[0].id : id("pricing-rule");
     if (existing.rowCount) {
@@ -216,7 +210,9 @@ async function ensureRules(client, jobberId, pricingDate) {
       );
     }
     const components = [
-      ["ub_low", "Lowest Rack", "vendor_min", "", null, 1, { marketKey: "$profile.marketKey", productKey }],
+      spotSourceRef
+        ? ["basis_choice", "Spot or Rack", "spot_or_rack_best", "", null, 1, { spotSourceRef, marketKey: "$profile.marketKey", terminalKey: "$profile.terminalKey", productKey }]
+        : ["ub_low", "Lowest Rack", "vendor_min", "", null, 1, { marketKey: "$profile.marketKey", terminalKey: "$profile.terminalKey", productKey }],
       ["contract_minus", "Contract Minus", "source_value", `marketKey=$profile.marketKey|productKey=${productKey}|quoteCode=CONTRACT_MINUS`, null, 1, {}],
       ["freight", "Freight", "customer_profile", freightField, null, 1, {}],
       ["margin", "Rack Margin", "customer_profile", marginField, null, 1, {}],
@@ -244,7 +240,7 @@ async function ensureRules(client, jobberId, pricingDate) {
 
 async function applyWorkbookPricingTestData() {
   await initDb();
-  const pricingDate = new Date().toISOString().slice(0, 10);
+  const pricingDate = process.env.PRICING_DATE || localCalendarDate();
   const workbookPresent = fs.existsSync(WORKBOOK_PATH);
   const jobbers = await query(`SELECT id FROM jobbers ORDER BY created_at ASC`);
   if (!jobbers.rowCount) {

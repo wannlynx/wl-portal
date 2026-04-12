@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams, useParams } from "react-router-dom";
 import { api } from "../api";
+import { AlliedTransactionsTab } from "./AlliedTransactionsTab";
 
-const TABS = ["overview", "alerts", "tanks", "pumps", "history", "layout", "config"];
+const TABS = ["overview", "alerts", "tanks", "pumps", "history", "allied", "layout", "config"];
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -186,6 +187,10 @@ export function SiteDetailPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {activeTab === "allied" && (
+        <AlliedTransactionsTab siteId={siteId} site={site} />
       )}
 
       {activeTab === "layout" && (

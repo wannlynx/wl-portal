@@ -130,6 +130,7 @@ export interface PricingDashboardData {
   forwardCurves: ForwardCurveSeries[];
   insightSummary: MarketInsightSummary;
   sourceCoverage: SourceCoverageItem[];
+  warnings?: string[];
 }
 
 export interface OpisFilterOption {
@@ -221,4 +222,60 @@ export interface OpisMarketSnapshot {
   };
   rows: OpisSummaryRow[];
   notes: string[];
+}
+
+export interface OpisRawSupplierRow {
+  supplier: string;
+  cells: string[];
+  raw: string;
+}
+
+export interface OpisRawMetricRow {
+  label: string;
+  cells: string[];
+  values: string[];
+  subsection: string;
+}
+
+export interface OpisRawSection {
+  id: string;
+  market: string;
+  capturedAt: string;
+  title: string;
+  sectionType: "benchmark" | "retail" | "note";
+  headerLine: string;
+  supplierColumns: string[];
+  suppliers: OpisRawSupplierRow[];
+  metrics: OpisRawMetricRow[];
+  notes: string[];
+  rawLines: string[];
+}
+
+export interface OpisRawReport {
+  generatedAt: string;
+  markets: string[];
+  sections: OpisRawSection[];
+  disclaimers: string[];
+}
+
+export type OpisRawApiRecord = Record<string, unknown>;
+
+export interface OpisRawApiData {
+  summaries?: OpisRawApiRecord[] | null;
+  Summaries?: OpisRawApiRecord[] | null;
+  supplierPrices?: OpisRawApiRecord[] | null;
+  SupplierPrices?: OpisRawApiRecord[] | null;
+}
+
+export interface OpisRawApiResponse {
+  statusCode?: number;
+  StatusCode?: number;
+  requestId?: string | null;
+  RequestId?: string | null;
+  additionalInfo?: string | null;
+  AdditionalInfo?: string | null;
+  errorMessage?: string | null;
+  ErrorMessage?: string | null;
+  data?: OpisRawApiData | null;
+  Data?: OpisRawApiData | null;
 }
